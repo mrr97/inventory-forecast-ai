@@ -22,8 +22,18 @@ class Settings(BaseSettings):
     demo_end_date: date = date(2025, 12, 31)
 
     # MLflow experiment tracking (local file store, no server) — wired up in F2
-    mlflow_tracking_uri: str = "file:./mlruns"
+    # Local SQLite backend = no server, single file. (MLflow deprecated the bare
+    # file store; SQLite is the recommended serverless local backend.)
+    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
     mlflow_experiment: str = "demand-forecast"
+
+    # Trained model artifact (CatBoost) — produced in F2, consumed in F3
+    model_dir: Path = Path("models")
+    model_path: Path = Path("models/catboost_demand.cbm")
+
+    # Walk-forward backtest: evaluate the last `folds * fold_days` days, one-step-ahead.
+    backtest_folds: int = 3
+    backtest_fold_days: int = 28
 
     # Dash UI — wired up in F3
     ui_host: str = "127.0.0.1"

@@ -17,6 +17,8 @@ build/
 # ML tracking / experiment artifacts
 mlruns/
 mlartifacts/
+mlflow.db
+models/
 
 # OS / editor / local tooling
 .DS_Store

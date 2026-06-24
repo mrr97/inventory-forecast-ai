@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-**Status:** Phase 1 of 5 complete — reproducible synthetic dataset ready.
+**Status:** Phases 1–2 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline**, in a 3-fold walk-forward backtest.
 
 ---
 
@@ -44,6 +44,27 @@ uv run inventory-forecast-ai generate-demo
 # -> data/demand.csv    (daily units_sold, on_promo, price)
 ```
 
+## Forecasting
+
+A single **global CatBoost** model across all SKUs (Poisson loss for count demand),
+with calendar features, lags (1/7/14/28), rolling stats, price and promotion flags.
+It is benchmarked one-step-ahead with a **walk-forward backtest** against two
+baselines — *naive* (yesterday) and *seasonal-naive* (same weekday last week) —
+and every run is tracked in **MLflow** (local SQLite backend, no server).
+
+```bash
+uv run inventory-forecast-ai train       # backtest + MLflow + save model
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # optional: inspect runs
+```
+
+| Model | WAPE | MAE |
+|-------|-----:|----:|
+| naive | 0.227 | 8.98 |
+| seasonal-naive | 0.271 | 10.72 |
+| **CatBoost** | **0.137** | **5.43** |
+
+→ **~40% lower WAPE than naive, ~49% lower than seasonal-naive.**
+
 ## Project layout
 
 ```
@@ -52,6 +73,7 @@ src/inventory_forecast_ai/
   log.py           # structlog setup
   models.py        # typed domain models (Sku, Category)
   demo/generator.py# deterministic synthetic data
+  forecasting/     # features, baselines, CatBoost model, walk-forward backtest
   cli.py           # typer CLI
 tests/             # pytest
 ```
@@ -59,7 +81,7 @@ tests/             # pytest
 ## Roadmap
 
 - [x] **F1** — Repo scaffold + reproducible synthetic dataset
-- [ ] **F2** — Features + CatBoost forecast vs. baseline + walk-forward backtest + MLflow
+- [x] **F2** — Features + CatBoost forecast vs. baselines + walk-forward backtest + MLflow
 - [ ] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
 - [ ] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy
 - [ ] **F5** — README polish + CI + Dagster job wiring everything together

@@ -52,5 +52,32 @@ def generate_demo(
     typer.echo(f"  Demand:     {settings.demand_path}")
 
 
+@app.command()
+def train() -> None:
+    """Backtest CatBoost vs. naive baselines (walk-forward), log to MLflow, save model."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.forecasting.pipeline import train_and_evaluate
+
+    result = train_and_evaluate(settings)
+
+    typer.echo("")
+    typer.echo(
+        f"Walk-forward backtest — {result.n_folds} folds, {result.n_test_rows} one-step-ahead "
+        f"predictions"
+    )
+    typer.echo(f"{'model':<16}{'WAPE':>10}{'MAE':>10}")
+    for name in ("naive", "seasonal_naive", "catboost"):
+        typer.echo(f"{name:<16}{result.wape[name]:>10.4f}{result.mae[name]:>10.3f}")
+    typer.echo("")
+    typer.echo(
+        f"CatBoost WAPE improvement: "
+        f"{result.wape_improvement_vs('naive'):.1%} vs naive, "
+        f"{result.wape_improvement_vs('seasonal_naive'):.1%} vs seasonal-naive"
+    )
+    typer.echo(f"Saved model -> {settings.model_path}")
+
+
 if __name__ == "__main__":
     app()
