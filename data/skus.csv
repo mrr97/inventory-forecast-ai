@@ -1,0 +1,23 @@
+sku_id,name,category,unit_cost,price,holding_cost_per_unit_per_day,order_cost,lead_time_days,min_order_qty,base_demand
+SKU-1001,Cola Beverages #1001,beverages,5.55,11.5,0.0172,25.65,6,10,46.86
+SKU-1002,Popcorn Snacks #1002,snacks,9.54,13.5,0.0224,42.25,3,50,40.41
+SKU-1003,Sponges Household #1003,household,5.6,8.43,0.0149,23.83,6,50,39.74
+SKU-1004,Razors Personal Care #1004,personal_care,9.22,14.93,0.0361,73.59,6,20,15.71
+SKU-1005,Pens Stationery #1005,stationery,1.0,1.44,0.003,64.69,4,0,22.92
+SKU-1006,Coffee Beverages #1006,beverages,4.76,8.2,0.0075,27.8,6,10,17.48
+SKU-1007,Crackers Snacks #1007,snacks,5.53,11.33,0.0171,38.74,6,20,49.26
+SKU-1008,Wipes Household #1008,household,4.96,7.74,0.0151,28.39,6,0,5.4
+SKU-1009,Lotion Personal Care #1009,personal_care,8.15,15.77,0.0272,47.53,6,10,12.69
+SKU-1010,Markers Stationery #1010,stationery,1.82,3.46,0.0044,53.91,2,20,39.91
+SKU-1011,Iced Tea Beverages #1011,beverages,6.93,10.9,0.0076,46.2,5,50,27.47
+SKU-1012,Cookies Snacks #1012,snacks,10.31,15.57,0.0121,36.88,7,0,41.41
+SKU-1013,Detergent Household #1013,household,9.51,18.05,0.0211,68.84,5,0,6.25
+SKU-1014,Shampoo Personal Care #1014,personal_care,1.54,3.0,0.0037,29.68,7,10,13.38
+SKU-1015,Markers Stationery #1015,stationery,5.63,9.25,0.0107,57.82,6,20,9.82
+SKU-1016,Juice Beverages #1016,beverages,1.86,4.03,0.0069,61.98,4,0,58.3
+SKU-1017,Cookies Snacks #1017,snacks,8.74,14.9,0.0159,25.78,6,10,30.07
+SKU-1018,Wipes Household #1018,household,2.83,4.46,0.0077,30.61,4,50,46.72
+SKU-1019,Toothpaste Personal Care #1019,personal_care,5.47,10.2,0.0151,58.99,6,20,27.87
+SKU-1020,Notebook Stationery #1020,stationery,0.98,1.71,0.0019,28.67,6,0,37.32
+SKU-1021,Energy Drink Beverages #1021,beverages,11.14,20.31,0.0227,55.45,3,0,57.72
+SKU-1022,Chips Snacks #1022,snacks,6.05,12.13,0.0076,49.2,6,10,56.58
