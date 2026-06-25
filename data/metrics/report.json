@@ -1,0 +1,32 @@
+{
+  "forecast": {
+    "wape": {
+      "naive": 0.2268314692772567,
+      "seasonal_naive": 0.27091252153463313,
+      "catboost": 0.13709412908370872
+    },
+    "mae": {
+      "naive": 8.977272727272727,
+      "seasonal_naive": 10.721861471861471,
+      "catboost": 5.425752387946043
+    },
+    "improvement_vs_naive": 0.3956123922287952,
+    "improvement_vs_seasonal_naive": 0.4939542539151969,
+    "n_folds": 3,
+    "n_test_rows": 1848
+  },
+  "optimization": {
+    "n_pareto_points": 69,
+    "baseline_cost": 4561.439302301723,
+    "baseline_service": 0.9977571951277715,
+    "cost_saving_pct": 0.11964584018953962,
+    "cheapest_cost": 3072.030279685228,
+    "cheapest_service": 0.892521029903709,
+    "best_service": 1.0,
+    "best_service_cost": 4567.051541680587
+  },
+  "headline": {
+    "forecast": "CatBoost cuts forecast error (WAPE) 40% vs. naive",
+    "optimization": "At the baseline's service level, optimization cuts operating cost 12%"
+  }
+}

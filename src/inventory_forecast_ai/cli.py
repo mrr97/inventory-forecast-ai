@@ -115,6 +115,35 @@ def optimize() -> None:
 
 
 @app.command()
+def metrics() -> None:
+    """Consolidate forecast accuracy + cost savings into a single scorecard (report.json)."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.evaluation.report import run_metrics
+
+    report = run_metrics(settings)
+    fc = report["forecast"]
+    opt = report["optimization"]
+
+    typer.echo("")
+    typer.echo("Forecast accuracy (walk-forward backtest)")
+    typer.echo(f"  CatBoost WAPE {fc['wape']['catboost']:.3f}")
+    typer.echo(
+        f"  improvement: {fc['improvement_vs_naive']:.1%} vs naive, "
+        f"{fc['improvement_vs_seasonal_naive']:.1%} vs seasonal-naive"
+    )
+    typer.echo("")
+    typer.echo("Inventory cost vs. service (Pareto frontier)")
+    typer.echo(f"  {opt['n_pareto_points']} non-dominated policies")
+    typer.echo(f"  baseline: €{opt['baseline_cost']:.0f} at {opt['baseline_service']:.1%} service")
+    if opt["cost_saving_pct"] is not None:
+        typer.echo(f"  saving at baseline service: {opt['cost_saving_pct']:.1%}")
+    typer.echo("")
+    typer.echo(f"Saved scorecard -> {settings.report_path}")
+
+
+@app.command()
 def dashboard() -> None:
     """Launch the Dash UI: demand forecast and the cost-vs-service Pareto frontier."""
     settings = get_settings()

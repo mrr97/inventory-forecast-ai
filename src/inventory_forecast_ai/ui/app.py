@@ -1,4 +1,4 @@
-"""Dash app: two views — demand forecast and the cost-vs-service Pareto frontier."""
+"""Dash app: demand forecast, the cost-vs-service Pareto frontier, and a scorecard."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 
 from inventory_forecast_ai.config import Settings, get_settings
-from inventory_forecast_ai.ui.data import load_forecast_frame, load_pareto
+from inventory_forecast_ai.ui.data import load_forecast_frame, load_pareto, load_report
 
 _TEAL = "#0f9d8f"
 _SLATE = "#334155"
@@ -68,11 +68,67 @@ def _pareto_figure(pareto: dict) -> go.Figure:
     return fig
 
 
+def _metric_card(label: str, value: str, hint: str) -> html.Div:
+    return html.Div(
+        style={
+            "flex": "1 1 200px",
+            "padding": "16px",
+            "border": f"1px solid {_SLATE}22",
+            "borderRadius": "10px",
+            "background": "#f8fafc",
+        },
+        children=[
+            html.Div(value, style={"fontSize": "28px", "fontWeight": 700, "color": _TEAL}),
+            html.Div(label, style={"fontWeight": 600, "color": _SLATE, "marginTop": "4px"}),
+            html.Div(hint, style={"fontSize": "12px", "color": _SLATE}),
+        ],
+    )
+
+
+def _scorecard_children(report: dict | None) -> list:
+    if not report:
+        return [
+            html.P(
+                "Run `inventory-forecast-ai metrics` to build the scorecard.",
+                style={"color": _SLATE},
+            )
+        ]
+    fc = report["forecast"]
+    opt = report["optimization"]
+    saving = opt["cost_saving_pct"]
+    cards = html.Div(
+        style={"display": "flex", "flexWrap": "wrap", "gap": "12px", "marginTop": "8px"},
+        children=[
+            _metric_card(
+                "Forecast error (WAPE)",
+                f"{fc['wape']['catboost']:.3f}",
+                f"{fc['improvement_vs_naive']:.0%} better than naive",
+            ),
+            _metric_card(
+                "Cost saving",
+                "—" if saving is None else f"{saving:.0%}",
+                "at the baseline's service level",
+            ),
+            _metric_card(
+                "Service level",
+                f"{opt['baseline_service']:.1%}",
+                f"across {opt['n_pareto_points']} Pareto policies",
+            ),
+        ],
+    )
+    return [
+        html.P(report["headline"]["forecast"] + ".", style={"color": _SLATE}),
+        html.P(report["headline"]["optimization"] + ".", style={"color": _SLATE}),
+        cards,
+    ]
+
+
 def create_app(settings: Settings | None = None) -> Dash:
     """Build the Dash app. Data is loaded once at construction for snappy callbacks."""
     settings = settings or get_settings()
     forecast = load_forecast_frame(settings)
     pareto = load_pareto(settings)
+    report = load_report(settings)
     sku_ids = sorted(forecast["sku_id"].unique())
 
     app = Dash(__name__, title="Inventory Forecast AI")
@@ -112,12 +168,13 @@ def create_app(settings: Settings | None = None) -> Dash:
             ),
         ]
     pareto_tab = dcc.Tab(label="Cost vs. service (Pareto)", children=pareto_children)
+    scorecard_tab = dcc.Tab(label="Scorecard", children=_scorecard_children(report))
 
     app.layout = html.Div(
         style={"maxWidth": "920px", "margin": "0 auto", "fontFamily": "system-ui"},
         children=[
             html.H2("Inventory Forecast AI", style={"color": _SLATE}),
-            dcc.Tabs([forecast_tab, pareto_tab]),
+            dcc.Tabs([scorecard_tab, forecast_tab, pareto_tab]),
         ],
     )
 

@@ -32,3 +32,11 @@ def load_pareto(settings: Settings) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_report(settings: Settings) -> dict | None:
+    """Load the consolidated scorecard, or None if `metrics` has not run yet."""
+    path = settings.report_path
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))

@@ -1,0 +1,16 @@
+{
+  "wape": {
+    "naive": 0.2268314692772567,
+    "seasonal_naive": 0.27091252153463313,
+    "catboost": 0.13709412908370872
+  },
+  "mae": {
+    "naive": 8.977272727272727,
+    "seasonal_naive": 10.721861471861471,
+    "catboost": 5.425752387946043
+  },
+  "improvement_vs_naive": 0.3956123922287952,
+  "improvement_vs_seasonal_naive": 0.4939542539151969,
+  "n_folds": 3,
+  "n_test_rows": 1848
+}

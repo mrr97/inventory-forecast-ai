@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-**Status:** Phases 1–3 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%**.
+**Status:** Phases 1–4 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%** — both consolidated in a single reproducible scorecard.
 
 ---
 
@@ -92,6 +92,24 @@ uv run inventory-forecast-ai dashboard   # serve forecast + Pareto views (http:/
 → The frontier holds **69 non-dominated policies**; the business picks the cost/service
 trade-off it wants rather than being handed a single number.
 
+## Scorecard
+
+A single, reproducible **scorecard** consolidates both halves of the project. `train`
+persists the forecast metrics, `optimize` persists the frontier, and `metrics` merges
+them into `data/metrics/report.json` — the artifact the dashboard's *Scorecard* tab reads
+and this README cites. It reads the committed artifacts rather than recomputing, so the
+numbers always match the shipped model and frontier.
+
+```bash
+uv run inventory-forecast-ai metrics     # build data/metrics/report.json
+```
+
+| Metric | Value |
+|--------|------:|
+| Forecast error (WAPE), CatBoost | **0.137** (−40% vs. naive) |
+| Operating-cost saving @ baseline service | **−12%** |
+| Service level across the frontier | up to **100%** |
+
 ## Project layout
 
 ```
@@ -102,7 +120,8 @@ src/inventory_forecast_ai/
   demo/generator.py# deterministic synthetic data
   forecasting/     # features, baselines, CatBoost model, walk-forward backtest
   optimization/    # demand scenarios, (s,S) simulator, NSGA-II, Pareto frontier
-  ui/              # Dash dashboard (forecast + Pareto views)
+  evaluation/      # consolidated metrics scorecard (report.json)
+  ui/              # Dash dashboard (scorecard + forecast + Pareto views)
   cli.py           # typer CLI
 tests/             # pytest
 ```
@@ -112,7 +131,7 @@ tests/             # pytest
 - [x] **F1** — Repo scaffold + reproducible synthetic dataset
 - [x] **F2** — Features + CatBoost forecast vs. baselines + walk-forward backtest + MLflow
 - [x] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
-- [ ] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy
+- [x] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy, consolidated scorecard
 - [ ] **F5** — README polish + CI + Dagster job wiring everything together
 
 ---

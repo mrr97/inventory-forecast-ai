@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import mlflow
@@ -42,6 +43,21 @@ def _log_to_mlflow(settings: Settings, result: BacktestResult) -> None:
         )
 
 
+def _save_forecast_metrics(settings: Settings, result: BacktestResult) -> None:
+    """Persist the backtest metrics so the F4 scorecard can consolidate them."""
+    payload = {
+        "wape": result.wape,
+        "mae": result.mae,
+        "improvement_vs_naive": result.wape_improvement_vs("naive"),
+        "improvement_vs_seasonal_naive": result.wape_improvement_vs("seasonal_naive"),
+        "n_folds": result.n_folds,
+        "n_test_rows": result.n_test_rows,
+    }
+    path = settings.forecast_metrics_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def train_and_evaluate(settings: Settings) -> BacktestResult:
     """Build features, backtest CatBoost vs. baselines, log to MLflow, save the model.
 
@@ -60,6 +76,7 @@ def train_and_evaluate(settings: Settings) -> BacktestResult:
         params=params,
     )
     _log_to_mlflow(settings, result)
+    _save_forecast_metrics(settings, result)
 
     # Final model trained on all available history, for downstream optimization (F3).
     final_model = train_model(features, params)

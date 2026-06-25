@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     inventory_budget: float | None = None
     pareto_path: Path = Path("data/optimization/pareto.json")
 
+    # Consolidated metrics scorecard (F4). `train` writes the forecast metrics,
+    # `optimize` writes the Pareto frontier, and `metrics` merges both into a single
+    # report the dashboard reads and the README cites.
+    forecast_metrics_path: Path = Path("data/metrics/forecast.json")
+    report_path: Path = Path("data/metrics/report.json")
+
     # Dash UI — wired up in F3
     ui_host: str = "127.0.0.1"
     ui_port: int = 8050

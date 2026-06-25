@@ -66,11 +66,42 @@ def test_load_pareto_reads_saved_file(tmp_path):
     assert loaded["cost_saving_pct"] == 0.12
 
 
+def _report_dict() -> dict:
+    return {
+        "forecast": {
+            "wape": {"naive": 0.227, "seasonal_naive": 0.271, "catboost": 0.137},
+            "improvement_vs_naive": 0.396,
+        },
+        "optimization": {
+            "cost_saving_pct": 0.12,
+            "baseline_service": 0.998,
+            "n_pareto_points": 69,
+        },
+        "headline": {
+            "forecast": "CatBoost cuts forecast error (WAPE) 40% vs. naive",
+            "optimization": "At the baseline's service level, optimization cuts operating cost 12%",
+        },
+    }
+
+
 def test_create_app_builds_with_stubbed_data(monkeypatch):
     monkeypatch.setattr(ui_app, "load_forecast_frame", lambda settings: _forecast_frame())
     monkeypatch.setattr(ui_app, "load_pareto", lambda settings: _pareto_dict())
+    monkeypatch.setattr(ui_app, "load_report", lambda settings: _report_dict())
 
     app = create_app(settings=object())
     assert app.layout is not None
     # Headline reflects the saving from the stubbed Pareto.
     assert "12%" in str(app.layout)
+
+
+def test_scorecard_renders_metric_cards():
+    children = ui_app._scorecard_children(_report_dict())
+    rendered = str(children)
+    assert "0.137" in rendered  # forecast WAPE card
+    assert "12%" in rendered  # cost saving card
+
+
+def test_scorecard_handles_missing_report():
+    children = ui_app._scorecard_children(None)
+    assert "metrics" in str(children)
