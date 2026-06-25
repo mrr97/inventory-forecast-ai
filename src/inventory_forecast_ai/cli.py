@@ -79,5 +79,55 @@ def train() -> None:
     typer.echo(f"Saved model -> {settings.model_path}")
 
 
+@app.command()
+def optimize() -> None:
+    """Optimize (s, S) policies with NSGA-II, build the Pareto frontier, save it."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.optimization.pipeline import run_optimization
+
+    result = run_optimization(settings)
+
+    cheapest = result.pareto_cost.argmin()
+    safest = result.pareto_stockout.argmin()
+    typer.echo("")
+    typer.echo(f"Pareto frontier: {len(result.pareto_cost)} non-dominated policies")
+    typer.echo(f"{'policy':<18}{'op. cost':>12}{'service':>10}")
+    typer.echo(
+        f"{'baseline':<18}{result.baseline_cost:>12.0f}{1 - result.baseline_stockout:>10.1%}"
+    )
+    typer.echo(
+        f"{'cheapest':<18}{result.pareto_cost[cheapest]:>12.0f}"
+        f"{result.pareto_service[cheapest]:>10.1%}"
+    )
+    typer.echo(
+        f"{'best service':<18}{result.pareto_cost[safest]:>12.0f}"
+        f"{result.pareto_service[safest]:>10.1%}"
+    )
+    typer.echo("")
+    if result.cost_saving_pct == result.cost_saving_pct:  # not NaN
+        typer.echo(
+            f"At the baseline's service level, the optimizer cuts operating cost by "
+            f"{result.cost_saving_pct:.1%}."
+        )
+    typer.echo(f"Saved frontier -> {settings.pareto_path}")
+
+
+@app.command()
+def dashboard() -> None:
+    """Launch the Dash UI: demand forecast and the cost-vs-service Pareto frontier."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.ui.app import create_app
+
+    app_ = create_app(settings)
+    typer.echo("")
+    typer.echo(f"Dashboard running at http://{settings.ui_host}:{settings.ui_port}")
+    typer.echo("Press Ctrl+C to stop.")
+    app_.run(host=settings.ui_host, port=settings.ui_port, debug=False)
+
+
 if __name__ == "__main__":
     app()

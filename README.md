@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-**Status:** Phases 1–2 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline**, in a 3-fold walk-forward backtest.
+**Status:** Phases 1–3 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%**.
 
 ---
 
@@ -65,6 +65,33 @@ uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # optional: inspect r
 
 → **~40% lower WAPE than naive, ~49% lower than seasonal-naive.**
 
+> **Scaling note.** Training runs on CPU by default, which keeps the project portable
+> (runs anywhere with `docker compose up`) and deterministic. For very large catalogues
+> (hundreds of thousands of SKUs) set `CATBOOST_TASK_TYPE=GPU` and CatBoost trains on
+> CUDA with no other code change. At this data size it is not worth it — GPU init
+> overhead outweighs the compute.
+
+## Optimization & dashboard
+
+Each candidate **(s, S) ordering policy** (reorder point `s`, order-up-to level `S`)
+is scored by **simulating** it forward over Poisson demand scenarios sampled around the
+CatBoost forecast. NSGA-II ([pymoo](https://pymoo.org/)) evolves a population of policies
+and returns the **Pareto frontier** of operating cost vs. service level, benchmarked
+against a textbook safety-stock baseline.
+
+```bash
+uv run inventory-forecast-ai optimize    # build + save the Pareto frontier
+uv run inventory-forecast-ai dashboard   # serve forecast + Pareto views (http://127.0.0.1:8050)
+```
+
+| Policy | Operating cost | Service |
+|--------|---------------:|--------:|
+| baseline (safety stock) | €4561 | 99.8% |
+| optimizer @ baseline service | **−12%** | 99.8% |
+
+→ The frontier holds **69 non-dominated policies**; the business picks the cost/service
+trade-off it wants rather than being handed a single number.
+
 ## Project layout
 
 ```
@@ -74,6 +101,8 @@ src/inventory_forecast_ai/
   models.py        # typed domain models (Sku, Category)
   demo/generator.py# deterministic synthetic data
   forecasting/     # features, baselines, CatBoost model, walk-forward backtest
+  optimization/    # demand scenarios, (s,S) simulator, NSGA-II, Pareto frontier
+  ui/              # Dash dashboard (forecast + Pareto views)
   cli.py           # typer CLI
 tests/             # pytest
 ```
@@ -82,7 +111,7 @@ tests/             # pytest
 
 - [x] **F1** — Repo scaffold + reproducible synthetic dataset
 - [x] **F2** — Features + CatBoost forecast vs. baselines + walk-forward backtest + MLflow
-- [ ] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
+- [x] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
 - [ ] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy
 - [ ] **F5** — README polish + CI + Dagster job wiring everything together
 

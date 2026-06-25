@@ -24,7 +24,15 @@ DEFAULT_PARAMS: dict = {
     "random_seed": 42,
     "verbose": False,
     "allow_writing_files": False,
+    # "CPU" keeps training portable and deterministic. Switch to "GPU" only for very
+    # large catalogues, where the CUDA speed-up outweighs its init overhead.
+    "task_type": "CPU",
 }
+
+
+def build_params(task_type: str = "CPU") -> dict:
+    """Return training params with the chosen compute device (CPU/GPU)."""
+    return {**DEFAULT_PARAMS, "task_type": task_type}
 
 
 def _to_pool(frame: pd.DataFrame, *, with_label: bool = True) -> Pool:

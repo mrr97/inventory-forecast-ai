@@ -11,7 +11,7 @@ import structlog
 from inventory_forecast_ai.config import Settings
 from inventory_forecast_ai.forecasting.backtest import BacktestResult, walk_forward
 from inventory_forecast_ai.forecasting.features import build_features
-from inventory_forecast_ai.forecasting.model import DEFAULT_PARAMS, train_model
+from inventory_forecast_ai.forecasting.model import DEFAULT_PARAMS, build_params, train_model
 
 log = structlog.get_logger(__name__)
 
@@ -52,15 +52,17 @@ def train_and_evaluate(settings: Settings) -> BacktestResult:
     features = build_features(demand, skus)
     log.info("features_built", rows=len(features), skus=skus["sku_id"].nunique())
 
+    params = build_params(settings.catboost_task_type)
     result = walk_forward(
         features,
         folds=settings.backtest_folds,
         fold_days=settings.backtest_fold_days,
+        params=params,
     )
     _log_to_mlflow(settings, result)
 
     # Final model trained on all available history, for downstream optimization (F3).
-    final_model = train_model(features)
+    final_model = train_model(features, params)
     model_path: Path = settings.model_path
     model_path.parent.mkdir(parents=True, exist_ok=True)
     final_model.save_model(str(model_path))

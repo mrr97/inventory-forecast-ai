@@ -35,6 +35,24 @@ class Settings(BaseSettings):
     backtest_folds: int = 3
     backtest_fold_days: int = 28
 
+    # CatBoost compute device. "CPU" is the default and keeps the project fully
+    # portable (runs anywhere with `docker compose up`, deterministic). For very
+    # large catalogues (hundreds of thousands of SKUs) set "GPU" — CatBoost will
+    # train on CUDA with no other code change. Not worth it at this data size, where
+    # GPU init overhead outweighs the compute. See the README "Scaling" note.
+    catboost_task_type: str = "CPU"
+
+    # Multi-objective inventory optimization (F3).
+    opt_horizon_days: int = 28  # planning horizon simulated per policy
+    opt_scenarios: int = 50  # Monte-Carlo demand scenarios per evaluation
+    opt_pop_size: int = 80  # NSGA-II population
+    opt_generations: int = 60  # NSGA-II generations
+    opt_seed: int = 42
+    # Optional shared cap on average inventory investment (EUR). When set it couples
+    # the SKUs, turning the problem into a genuine joint allocation. None = unconstrained.
+    inventory_budget: float | None = None
+    pareto_path: Path = Path("data/optimization/pareto.json")
+
     # Dash UI — wired up in F3
     ui_host: str = "127.0.0.1"
     ui_port: int = 8050
