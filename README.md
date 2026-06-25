@@ -6,16 +6,31 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-**Status:** Phases 1–4 of 5 complete. **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%** — both consolidated in a single reproducible scorecard.
+**Status:** Feature-complete (all 5 phases). **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%** — both consolidated in a single reproducible scorecard.
 
 ---
+
+## Quickstart (Docker)
+
+One command builds the whole pipeline and serves the dashboards — no local Python needed:
+
+```bash
+docker compose up
+```
+
+- **Dashboard** → http://localhost:8050 — scorecard, demand forecast, and the Pareto frontier
+- **Dagster UI** → http://localhost:3000 — the asset graph (materialize the pipeline on demand)
+
+The `pipeline` service runs the full Dagster asset graph first (generate demo data → train →
+optimize → metrics); the dashboard starts once it finishes. To run locally instead, see the
+per-step commands below.
 
 ## What it does
 
 A compact, end-to-end inventory-planning pipeline:
 
 1. **Forecast demand** per SKU with [CatBoost](https://catboost.ai/), benchmarked against a naive baseline using walk-forward backtesting.
-2. **Track experiments** with MLflow (local file store, no server).
+2. **Track experiments** with MLflow (local SQLite backend, no server).
 3. **Optimize ordering policies** with a **multi-objective metaheuristic** ([pymoo](https://pymoo.org/), NSGA-II). Each candidate policy is scored by **simulating** it against the forecasted (uncertain) demand, so the result is a **Pareto frontier** of total cost vs. service level — not a single point.
 4. **Visualize** the forecast and the trade-off frontier in a Dash dashboard.
 5. **Orchestrate** the whole pipeline with a minimal Dagster job.
@@ -110,6 +125,23 @@ uv run inventory-forecast-ai metrics     # build data/metrics/report.json
 | Operating-cost saving @ baseline service | **−12%** |
 | Service level across the frontier | up to **100%** |
 
+## Orchestration (Dagster)
+
+The four stages are wired as a **Dagster software-defined asset graph**, so the pipeline
+is a dependency DAG rather than a script:
+
+```
+demo_data → trained_model → pareto_frontier → scorecard
+```
+
+Each asset wraps the same function the CLI calls (one source of truth) and hands off to the
+next through files on disk. Run the whole graph headlessly, or explore it in the Dagster UI:
+
+```bash
+uv run inventory-forecast-ai pipeline    # materialize the full graph in order
+uv run dagster dev                       # asset graph + manual materialization (http://localhost:3000)
+```
+
 ## Project layout
 
 ```
@@ -121,6 +153,7 @@ src/inventory_forecast_ai/
   forecasting/     # features, baselines, CatBoost model, walk-forward backtest
   optimization/    # demand scenarios, (s,S) simulator, NSGA-II, Pareto frontier
   evaluation/      # consolidated metrics scorecard (report.json)
+  orchestration/   # Dagster asset graph wiring the pipeline together
   ui/              # Dash dashboard (scorecard + forecast + Pareto views)
   cli.py           # typer CLI
 tests/             # pytest
@@ -132,13 +165,13 @@ tests/             # pytest
 - [x] **F2** — Features + CatBoost forecast vs. baselines + walk-forward backtest + MLflow
 - [x] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
 - [x] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy, consolidated scorecard
-- [ ] **F5** — README polish + CI + Dagster job wiring everything together
+- [x] **F5** — Dagster asset graph wiring the pipeline + Docker Compose + README polish + CI
 
 ---
 
 ## Resumen (ES)
 
-Pipeline de planificación de inventario de principio a fin: **predice la demanda** por SKU con CatBoost (frente a un baseline naive, con backtesting walk-forward), registra los experimentos en **MLflow** local, y **optimiza las políticas de pedido** con una **metaheurística multi-objetivo** (pymoo / NSGA-II). Cada política se evalúa **por simulación** sobre la demanda prevista (incierta), así que el resultado es una **frontera de Pareto** coste-vs-nivel de servicio, no un único óptimo. Forecast y frontera se muestran en un dashboard Dash, y todo se encadena con un job mínimo de **Dagster**.
+Pipeline de planificación de inventario de principio a fin: **predice la demanda** por SKU con CatBoost (frente a un baseline naive, con backtesting walk-forward), registra los experimentos en **MLflow** local, y **optimiza las políticas de pedido** con una **metaheurística multi-objetivo** (pymoo / NSGA-II). Cada política se evalúa **por simulación** sobre la demanda prevista (incierta), así que el resultado es una **frontera de Pareto** coste-vs-nivel de servicio, no un único óptimo. Forecast, frontera y scorecard se muestran en un dashboard Dash, y todo se encadena con un **grafo de assets de Dagster** (demo → train → optimize → metrics). Levanta entero con `docker compose up` (dashboard en :8050, UI de Dagster en :3000).
 
 **Por qué metaheurística y no solver exacto:** el nivel de servicio se mide simulando y es no-lineal/caja-negra, lo que rompe el programa lineal y justifica un optimizador poblacional multi-objetivo. La demanda real es incierta; entregar una frontera de decisión es más honesto y más útil que un único número.
 

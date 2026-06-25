@@ -1,0 +1,16 @@
+.venv/
+.git/
+.github/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.dagster/
+__pycache__/
+*.pyc
+mlflow.db
+mlruns/
+mlartifacts/
+tests/
+.env
+*.md
+!README.md

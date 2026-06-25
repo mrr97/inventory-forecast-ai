@@ -20,6 +20,10 @@ mlartifacts/
 mlflow.db
 models/
 
+# Dagster local instance
+.dagster/
+tmp*/
+
 # OS / editor / local tooling
 .DS_Store
 Thumbs.db

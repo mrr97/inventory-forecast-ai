@@ -144,6 +144,26 @@ def metrics() -> None:
 
 
 @app.command()
+def pipeline() -> None:
+    """Run the whole Dagster pipeline: generate-demo -> train -> optimize -> metrics."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.orchestration.definitions import run_pipeline
+
+    typer.echo("")
+    typer.echo(
+        "Materializing asset graph: demo_data -> trained_model -> pareto_frontier -> scorecard"
+    )
+    success = run_pipeline()
+    if not success:
+        typer.echo("Pipeline failed.")
+        raise typer.Exit(code=1)
+    typer.echo("")
+    typer.echo("Pipeline complete. Scorecard at " + str(settings.report_path))
+
+
+@app.command()
 def dashboard() -> None:
     """Launch the Dash UI: demand forecast and the cost-vs-service Pareto frontier."""
     settings = get_settings()

@@ -18,6 +18,8 @@ dependencies = [
     "pymoo>=0.6",
     "dash>=2.18",
     "plotly>=5.24",
+    "dagster>=1.8",
+    "dagster-webserver>=1.8",
 ]
 
 [dependency-groups]
@@ -48,3 +50,7 @@ ignore = ["T201"]  # CLI prints are intentional via typer.echo
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.dagster]
+module_name = "inventory_forecast_ai.orchestration.definitions"
+code_location_name = "inventory_forecast_ai"
