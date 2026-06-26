@@ -2,11 +2,13 @@
 
 > Predict demand, then explore the **cost-vs-service trade-off frontier** to decide how much to order.
 
-![CI](https://img.shields.io/badge/CI-ruff%20%2B%20pytest-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Python](https://img.shields.io/badge/python-3.12-blue)
+[![CI](https://github.com/mrr97/inventory-forecast-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/mrr97/inventory-forecast-ai/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
 
 **Status:** Feature-complete (all 5 phases). **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%** — both consolidated in a single reproducible scorecard.
+
+![Cost-vs-service Pareto frontier: at the safety-stock baseline's service level, the optimizer's policy costs ~12% less](docs/pareto.png)
 
 ---
 
