@@ -5,7 +5,7 @@ description = "Demand forecasting + multi-objective inventory optimization. Pred
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "Portfolio" }]
+authors = [{ name = "Miguel Roldán Rodríguez" }]
 dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
