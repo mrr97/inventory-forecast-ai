@@ -1,14 +1,20 @@
 # Inventory Forecast AI
 
-> Predict demand, then explore the **cost-vs-service trade-off frontier** to decide how much to order.
+> Forecast the days ahead, then explore the **cost-vs-service trade-off frontier** to decide how much to order.
 
 [![CI](https://github.com/mrr97/inventory-forecast-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/mrr97/inventory-forecast-ai/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
 
-**Status:** Feature-complete (all 5 phases). **CatBoost cuts forecast error (WAPE) by ~40% vs. a naive baseline and ~49% vs. a seasonal-naive baseline** (3-fold walk-forward backtest), and **at the baseline's service level the optimizer cuts operating cost by ~12%** — both consolidated in a single reproducible scorecard.
+A demand-to-decision pipeline that plans inventory by **looking forward**, not backward. A single
+multi-horizon model forecasts the next two weeks of demand for every SKU — using the calendar and
+**planned promotions** — and those forecasts drive the ordering policy.
 
-![Cost-vs-service Pareto frontier: at the safety-stock baseline's service level, the optimizer's policy costs ~12% less](docs/pareto.png)
+- **Forecast (forward vs. a trailing-mean baseline):** cuts demand error (WAPE) **~48%** overall and **~75% on promotion days**, where a backward-looking mean is blind.
+- **Decision (on the most seasonal stretch):** planning ahead cuts **total inventory cost ~19%** at **higher service** — the retrovisor loses ~2.5× more sales.
+- **Optimization:** at the safety-stock baseline's service level, the optimizer cuts operating cost **~34%**, and returns a whole **Pareto frontier** to pick from rather than a single number.
+
+![Cost-vs-service Pareto frontier: at the safety-stock baseline's service level, the optimizer's policy costs ~34% less](docs/pareto.png)
 
 ---
 
@@ -20,39 +26,36 @@ One command builds the whole pipeline and serves the dashboards — no local Pyt
 docker compose up
 ```
 
-- **Dashboard** → http://localhost:8050 — scorecard, demand forecast, and the Pareto frontier
-- **Dagster UI** → http://localhost:3000 — the asset graph (materialize the pipeline on demand)
+- **Dashboard** → http://localhost:8050 — scorecard, forward demand forecast, and the Pareto frontier
+- **Dagster UI** → http://localhost:3000 — the asset graph and the weekly recompute schedule
 
-The `pipeline` service runs the full Dagster asset graph first (generate demo data → train →
-optimize → metrics); the dashboard starts once it finishes. To run locally instead, see the
+The `pipeline` service runs the full asset graph first (generate demo data → train → optimize →
+compare → scorecard); the dashboard starts once it finishes. To run locally instead, see the
 per-step commands below.
+
+## Why look forward?
+
+Setting stock levels from the **recent past** — a trailing mean — is like driving by the rear-view
+mirror: fine on a straight road, but it lags every curve. Seasonality, trends and **promotions** are
+exactly the curves, and they are *knowable in advance*. This project forecasts each of the next
+`HORIZON` days explicitly (calendar + planned promo/price), so the ordering policy **anticipates**
+demand instead of chasing it. The payoff shows up precisely where the trailing mean is blind — see
+the promotion-day and seasonal-stretch numbers below.
 
 ## What it does
 
-A compact, end-to-end inventory-planning pipeline:
-
-1. **Forecast demand** per SKU with [CatBoost](https://catboost.ai/), benchmarked against a naive baseline using walk-forward backtesting.
+1. **Forecast demand** up to two weeks ahead with a single global [CatBoost](https://catboost.ai/) model, benchmarked against a trailing-mean baseline with a rolling-origin backtest.
 2. **Track experiments** with MLflow (local SQLite backend, no server).
-3. **Optimize ordering policies** with a **multi-objective metaheuristic** ([pymoo](https://pymoo.org/), NSGA-II). Each candidate policy is scored by **simulating** it against the forecasted (uncertain) demand, so the result is a **Pareto frontier** of total cost vs. service level — not a single point.
-4. **Visualize** the forecast and the trade-off frontier in a Dash dashboard.
-5. **Orchestrate** the whole pipeline with a minimal Dagster job.
-
-### Why a metaheuristic instead of an exact solver?
-
-The order policy is evaluated by **simulation over forecasted demand scenarios**. Service level (fill rate) is non-linear and effectively black-box, which breaks the clean linear program and genuinely justifies a population-based multi-objective optimizer. The deliverable is a frontier the business can pick from, reflecting that real demand is uncertain.
-
-## The two objectives
-
-| Objective | Meaning |
-|-----------|---------|
-| **Minimize total cost** | Holding + ordering + purchase cost |
-| **Maximize service level** | Fill rate / minimize stockouts |
-
-These genuinely conflict — more safety stock improves service but costs more — which is exactly what makes a Pareto frontier informative. (An optional third objective, e.g. number of orders, may be added later.)
+3. **Turn the forecast into demand scenarios**, widened by the *measured* per-horizon forecast error, so the optimizer provisions for real uncertainty.
+4. **Optimize ordering policies** with a **multi-objective metaheuristic** ([pymoo](https://pymoo.org/), NSGA-II) → a **Pareto frontier** of cost vs. service.
+5. **Prove the decisions are better** with a forward-vs-trailing comparison at the cost level on the most seasonal stretch.
+6. **Visualize** the forecast, the frontier and a scorecard in a Dash dashboard.
+7. **Orchestrate** the pipeline with a Dagster asset graph and a **weekly recompute** schedule.
 
 ## Demo dataset
 
-Two years of daily sales for ~22 fictional SKUs across five categories, with weekly and yearly seasonality, price promotions, and Poisson noise — fully reproducible from a single seed.
+Two years of daily sales for ~22 fictional SKUs across five categories, with weekly and yearly
+seasonality, price promotions, and Poisson noise — fully reproducible from a single seed.
 
 ```bash
 uv sync --dev
@@ -63,38 +66,45 @@ uv run inventory-forecast-ai generate-demo
 
 ## Forecasting
 
-A single **global CatBoost** model across all SKUs (Poisson loss for count demand),
-with calendar features, lags (1/7/14/28), rolling stats, price and promotion flags.
-It is benchmarked one-step-ahead with a **walk-forward backtest** against two
-baselines — *naive* (yesterday) and *seasonal-naive* (same weekday last week) —
-and every run is tracked in **MLflow** (local SQLite backend, no server).
+A single **global CatBoost** model (Poisson loss for count demand) forecasts every horizon at once
+by taking the **horizon `h` as an input feature** — so one model, queried for `h = 1..14`, produces
+the whole forward path (no recursion, so error does not compound). Each row pairs **origin-time**
+features (recent demand as-of today) with **target-day** features knowable in advance (calendar and
+*planned* promo/price). The horizon `HORIZON = 14` is the **protection interval** = weekly review +
+lead time.
+
+It is scored with a **rolling-origin backtest** — train on the past, roll the origin through a
+held-out tail, score the full 14-day path per horizon — against the **trailing 28-day mean**
+(the retrovisor):
 
 ```bash
-uv run inventory-forecast-ai train       # backtest + MLflow + save model
-uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # optional: inspect runs
+uv run inventory-forecast-ai train       # rolling-origin backtest + MLflow + save model
 ```
 
 | Model | WAPE | MAE |
 |-------|-----:|----:|
-| naive | 0.227 | 8.98 |
-| seasonal-naive | 0.271 | 10.72 |
-| **CatBoost** | **0.137** | **5.43** |
+| trailing mean (retrovisor) | 0.253 | 10.45 |
+| **forward (this model)** | **0.131** | **5.42** |
 
-→ **~40% lower WAPE than naive, ~49% lower than seasonal-naive.**
+→ **~48% lower WAPE overall, and ~75% lower on promotion days** (0.118 vs. 0.477), where a
+backward-looking mean cannot see the spike coming.
 
-> **Scaling note.** Training runs on CPU by default, which keeps the project portable
-> (runs anywhere with `docker compose up`) and deterministic. For very large catalogues
-> (hundreds of thousands of SKUs) set `CATBOOST_TASK_TYPE=GPU` and CatBoost trains on
-> CUDA with no other code change. At this data size it is not worth it — GPU init
-> overhead outweighs the compute.
+> **Scaling note.** Training runs on CPU by default, which keeps the project portable (runs anywhere
+> with `docker compose up`) and deterministic. For very large catalogues set `CATBOOST_TASK_TYPE=GPU`
+> and CatBoost trains on CUDA with no other code change. At this data size it is not worth it.
+
+## Scenarios & uncertainty
+
+Each **(s, S) ordering policy** (reorder point `s`, order-up-to level `S`) is scored by **simulating**
+it over Monte-Carlo demand sampled around the **forward** forecast. The samples carry two uncertainty
+sources: the Poisson count noise, and the model's own forecast error — widened per horizon by the
+**measured** backtest error (net of Poisson noise), so scenarios are neither over-confident nor
+double-counting.
 
 ## Optimization & dashboard
 
-Each candidate **(s, S) ordering policy** (reorder point `s`, order-up-to level `S`)
-is scored by **simulating** it forward over Poisson demand scenarios sampled around the
-CatBoost forecast. NSGA-II ([pymoo](https://pymoo.org/)) evolves a population of policies
-and returns the **Pareto frontier** of operating cost vs. service level, benchmarked
-against a textbook safety-stock baseline.
+NSGA-II evolves a population of policies and returns the **Pareto frontier** of operating cost vs.
+service level, benchmarked against a textbook safety-stock baseline.
 
 ```bash
 uv run inventory-forecast-ai optimize    # build + save the Pareto frontier
@@ -103,45 +113,63 @@ uv run inventory-forecast-ai dashboard   # serve forecast + Pareto views (http:/
 
 | Policy | Operating cost | Service |
 |--------|---------------:|--------:|
-| baseline (safety stock) | €4561 | 99.8% |
-| optimizer @ baseline service | **−12%** | 99.8% |
+| baseline (safety stock) | €2164 | 99.9% |
+| optimizer @ baseline service | **−34%** | 99.9% |
 
-→ The frontier holds **69 non-dominated policies**; the business picks the cost/service
-trade-off it wants rather than being handed a single number.
+→ The frontier holds **34 non-dominated policies**; the business picks the cost/service trade-off it
+wants rather than being handed a single number.
+
+### Why a metaheuristic instead of an exact solver?
+
+Service level is measured by **simulation** over forecasted demand scenarios; it is non-linear and
+effectively black-box, which breaks a clean linear program and genuinely justifies a population-based
+multi-objective optimizer. The deliverable is a frontier the business can choose from.
+
+## Does looking forward actually cost less? (decision-level proof)
+
+Accuracy is not the point — **better decisions** are. On the **most seasonal stretch** of the data
+(auto-selected), the origin is rolled weekly and the *same* textbook (s, S) policy is built two ways
+— fed the **forward forecast** vs. the flat **trailing mean** — then both are simulated against the
+**actual** demand that followed. The headline is **total economic cost** = operating cost **plus lost
+sales valued at unit margin** (the honest newsvendor view: understocking only looks cheap because it
+fails to serve demand).
+
+```bash
+uv run inventory-forecast-ai compare     # forward vs. trailing on the seasonal stretch
+```
+
+| Policy | Total cost | Service |
+|--------|-----------:|--------:|
+| trailing mean (retrovisor) | €3385 | 98.3% |
+| **forward (parabrisas)** | **€2749** | 99.3% |
+
+→ **~19% lower total cost at ~1 pp higher service.** The trailing policy's operating cost is barely
+lower, but it loses **~2.5× more sales** because it lags the ramp — so it ends up more expensive.
 
 ## Scorecard
 
-A single, reproducible **scorecard** consolidates both halves of the project. `train`
-persists the forecast metrics, `optimize` persists the frontier, and `metrics` merges
-them into `data/metrics/report.json` — the artifact the dashboard's *Scorecard* tab reads
-and this README cites. It reads the committed artifacts rather than recomputing, so the
-numbers always match the shipped model and frontier.
+A single reproducible **scorecard** consolidates all three halves. `train`, `optimize` and `compare`
+each persist their metrics, and `metrics` merges them into `data/metrics/report.json` — the artifact
+the dashboard's *Scorecard* tab reads and this README cites.
 
 ```bash
 uv run inventory-forecast-ai metrics     # build data/metrics/report.json
 ```
 
-| Metric | Value |
-|--------|------:|
-| Forecast error (WAPE), CatBoost | **0.137** (−40% vs. naive) |
-| Operating-cost saving @ baseline service | **−12%** |
-| Service level across the frontier | up to **100%** |
-
 ## Orchestration (Dagster)
 
-The four stages are wired as a **Dagster software-defined asset graph**, so the pipeline
-is a dependency DAG rather than a script:
+The stages are wired as a **software-defined asset graph**, so the pipeline is a dependency DAG
+rather than a script, with a **weekly recompute** schedule (Mondays) that refreshes the policies with
+a fresh forecast:
 
 ```
-demo_data → trained_model → pareto_frontier → scorecard
+demo_data → trained_model → pareto_frontier ┐
+        └→ forward_vs_trailing ─────────────┴→ scorecard
 ```
-
-Each asset wraps the same function the CLI calls (one source of truth) and hands off to the
-next through files on disk. Run the whole graph headlessly, or explore it in the Dagster UI:
 
 ```bash
 uv run inventory-forecast-ai pipeline    # materialize the full graph in order
-uv run dagster dev                       # asset graph + manual materialization (http://localhost:3000)
+uv run dagster dev                       # asset graph + schedule (http://localhost:3000)
 ```
 
 ## Project layout
@@ -152,30 +180,37 @@ src/inventory_forecast_ai/
   log.py           # structlog setup
   models.py        # typed domain models (Sku, Category)
   demo/generator.py# deterministic synthetic data
-  forecasting/     # features, baselines, CatBoost model, walk-forward backtest
-  optimization/    # demand scenarios, (s,S) simulator, NSGA-II, Pareto frontier
-  evaluation/      # consolidated metrics scorecard (report.json)
-  orchestration/   # Dagster asset graph wiring the pipeline together
+  forecasting/     # multi-horizon features, CatBoost model, rolling-origin backtest
+  optimization/    # forward demand scenarios, (s,S) simulator, NSGA-II, Pareto frontier
+  evaluation/      # scorecard + decision-level forward-vs-trailing comparison
+  orchestration/   # Dagster asset graph + weekly schedule
   ui/              # Dash dashboard (scorecard + forecast + Pareto views)
   cli.py           # typer CLI
 tests/             # pytest
 ```
 
-## Roadmap
+## Notes & limitations
 
-- [x] **F1** — Repo scaffold + reproducible synthetic dataset
-- [x] **F2** — Features + CatBoost forecast vs. baselines + walk-forward backtest + MLflow
-- [x] **F3** — pymoo multi-objective optimization (simulation-based) + Dash (forecast + Pareto views)
-- [x] **F4** — Metrics: forecast accuracy + cost savings vs. a simple policy, consolidated scorecard
-- [x] **F5** — Dagster asset graph wiring the pipeline + Docker Compose + README polish + CI
+- The demand is synthetic but *learnable* (seasonality + promotions + Poisson noise); the point is
+  the method, not the numbers, which will differ on real data.
+- The seasonal-stretch comparison is deliberately scoped to one auto-selected window; it is a proof
+  of mechanism, not a full backtest of the ordering policy.
+- Scenario widening treats horizons as independent given the forecast; sustained demand *streaks*
+  (temporal correlation) are left as a documented next step (e.g. block-bootstrap residuals).
 
 ---
 
 ## Resumen (ES)
 
-Pipeline de planificación de inventario de principio a fin: **predice la demanda** por SKU con CatBoost (frente a un baseline naive, con backtesting walk-forward), registra los experimentos en **MLflow** local, y **optimiza las políticas de pedido** con una **metaheurística multi-objetivo** (pymoo / NSGA-II). Cada política se evalúa **por simulación** sobre la demanda prevista (incierta), así que el resultado es una **frontera de Pareto** coste-vs-nivel de servicio, no un único óptimo. Forecast, frontera y scorecard se muestran en un dashboard Dash, y todo se encadena con un **grafo de assets de Dagster** (demo → train → optimize → metrics). Levanta entero con `docker compose up` (dashboard en :8050, UI de Dagster en :3000).
-
-**Por qué metaheurística y no solver exacto:** el nivel de servicio se mide simulando y es no-lineal/caja-negra, lo que rompe el programa lineal y justifica un optimizador poblacional multi-objetivo. La demanda real es incierta; entregar una frontera de decisión es más honesto y más útil que un único número.
+Pipeline de planificación de inventario que decide **mirando hacia delante**, no hacia atrás. Un
+único modelo multi-horizonte (CatBoost, horizonte como variable) predice los próximos 14 días de
+demanda por SKU usando el calendario y las **promociones planificadas**, y esa predicción alimenta la
+política de pedido (s, S). Frente a una **media móvil** (el "retrovisor"): **~48% menos error (WAPE)**,
+**~75% menos en días de promoción**, y en el tramo más estacional **~19% menos coste total** con más
+servicio (el retrovisor pierde ~2,5× más ventas). La optimización multi-objetivo (pymoo / NSGA-II)
+sobre escenarios de demanda **futura** —ensanchados por el error de pronóstico medido— entrega una
+**frontera de Pareto** coste-vs-servicio, no un único número. Todo se encadena con un grafo de assets
+de **Dagster** con **recálculo semanal**, y se levanta con `docker compose up`.
 
 ## Licencia
 

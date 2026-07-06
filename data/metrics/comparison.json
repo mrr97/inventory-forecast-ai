@@ -1,0 +1,96 @@
+{
+  "window_start": "2025-08-09",
+  "window_end": "2025-10-08",
+  "n_origins": 9,
+  "forward_cost": 2749.4997101195977,
+  "trailing_cost": 3385.363781353551,
+  "forward_operating": 2360.9127898894862,
+  "trailing_operating": 2346.062285978223,
+  "forward_service": 0.9934867441740979,
+  "trailing_service": 0.98270817555532,
+  "per_origin": [
+    {
+      "origin": "2025-08-09",
+      "forward_cost": 2400.1450020077045,
+      "trailing_cost": 2379.29265892503,
+      "forward_operating": 2400.1450020077045,
+      "trailing_operating": 2333.654803781553,
+      "forward_service": 1.0,
+      "trailing_service": 0.9991298171168007
+    },
+    {
+      "origin": "2025-08-16",
+      "forward_cost": 2329.3374648379477,
+      "trailing_cost": 2339.5207196407887,
+      "forward_operating": 2313.7836174582744,
+      "trailing_operating": 2336.5194143135004,
+      "forward_service": 0.9997032046658105,
+      "trailing_service": 0.9999427297056559
+    },
+    {
+      "origin": "2025-08-23",
+      "forward_cost": 2467.1311762162222,
+      "trailing_cost": 2357.5623036341185,
+      "forward_operating": 2467.1311762162222,
+      "trailing_operating": 2357.5623036341185,
+      "forward_service": 1.0,
+      "trailing_service": 1.0
+    },
+    {
+      "origin": "2025-08-30",
+      "forward_cost": 2926.4995666625578,
+      "trailing_cost": 2509.1063578747185,
+      "forward_operating": 2188.372141705393,
+      "trailing_operating": 2214.1460782633617,
+      "forward_service": 0.9871562868352192,
+      "trailing_service": 0.9948675728631114
+    },
+    {
+      "origin": "2025-09-06",
+      "forward_cost": 3321.3981961096815,
+      "trailing_cost": 4678.33261100534,
+      "forward_operating": 2347.321718217961,
+      "trailing_operating": 2297.3573118827176,
+      "forward_service": 0.9837896831948705,
+      "trailing_service": 0.9603764542312907
+    },
+    {
+      "origin": "2025-09-13",
+      "forward_cost": 2804.6452380968612,
+      "trailing_cost": 3143.6540972543044,
+      "forward_operating": 2260.3778078102837,
+      "trailing_operating": 2222.883638442249,
+      "forward_service": 0.9908973323843797,
+      "trailing_service": 0.9846004611511749
+    },
+    {
+      "origin": "2025-09-20",
+      "forward_cost": 2922.793700564708,
+      "trailing_cost": 4788.745734525415,
+      "forward_operating": 2488.273376602708,
+      "trailing_operating": 2483.1043929711336,
+      "forward_service": 0.9931575783406935,
+      "trailing_service": 0.9636929059837874
+    },
+    {
+      "origin": "2025-09-27",
+      "forward_cost": 3063.992698753104,
+      "trailing_cost": 4381.469516247304,
+      "forward_operating": 2502.215275119321,
+      "trailing_operating": 2478.8642575748227,
+      "forward_service": 0.9908196177906259,
+      "trailing_service": 0.9689082495426786
+    },
+    {
+      "origin": "2025-10-04",
+      "forward_cost": 2509.5543478275886,
+      "trailing_cost": 3890.590033074941,
+      "forward_operating": 2280.594993867508,
+      "trailing_operating": 2390.468372940549,
+      "forward_service": 0.9958569943552822,
+      "trailing_service": 0.9728553894033792
+    }
+  ],
+  "cost_reduction": 0.18782739826551798,
+  "service_gain": 0.010778568618777906
+}
