@@ -10,6 +10,7 @@ import numpy as np
 import structlog
 
 from inventory_forecast_ai.config import Settings
+from inventory_forecast_ai.forecasting.features import HORIZON
 from inventory_forecast_ai.optimization.optimize import OptimizationResult, optimize_policies
 from inventory_forecast_ai.optimization.scenarios import build_demand_scenarios
 
@@ -55,7 +56,7 @@ def _log_to_mlflow(settings: Settings, result: OptimizationResult) -> None:
                 "pop_size": settings.opt_pop_size,
                 "generations": settings.opt_generations,
                 "scenarios": settings.opt_scenarios,
-                "horizon_days": settings.opt_horizon_days,
+                "horizon_days": HORIZON,
                 "inventory_budget": settings.inventory_budget,
             }
         )

@@ -42,8 +42,9 @@ class Settings(BaseSettings):
     # GPU init overhead outweighs the compute. See the README "Scaling" note.
     catboost_task_type: str = "CPU"
 
-    # Multi-objective inventory optimization (F3).
-    opt_horizon_days: int = 28  # planning horizon simulated per policy
+    # Multi-objective inventory optimization. The planning horizon is fixed at the
+    # protection interval (weekly review + max lead time) in `forecasting.features.HORIZON`
+    # — a single source of truth — so it is not duplicated here.
     opt_scenarios: int = 50  # Monte-Carlo demand scenarios per evaluation
     opt_pop_size: int = 80  # NSGA-II population
     opt_generations: int = 60  # NSGA-II generations
