@@ -1,7 +1,10 @@
-"""CatBoost demand model: a single global model across all SKUs.
+"""CatBoost demand model: a single global model across all SKUs and horizons.
 
-A Poisson loss is used because the target is non-negative count data (units sold);
-it keeps predictions non-negative and matches the demand-generating process.
+One model handles every horizon because the horizon ``h`` is just another input
+feature (see ``features.py``). A Poisson loss is used because the target is
+non-negative count data (units sold); it keeps predictions non-negative and matches
+the demand-generating process, so the prediction for a row is the expected demand
+``lambda`` for that (SKU, target-day, horizon).
 """
 
 from __future__ import annotations
@@ -45,13 +48,25 @@ def _to_pool(frame: pd.DataFrame, *, with_label: bool = True) -> Pool:
 
 
 def train_model(train_df: pd.DataFrame, params: dict | None = None) -> CatBoostRegressor:
-    """Fit a CatBoost model on the engineered feature frame."""
+    """Fit a CatBoost model on the multi-horizon feature frame."""
     model = CatBoostRegressor(**(params or DEFAULT_PARAMS))
     model.fit(_to_pool(train_df))
     return model
 
 
 def predict(model: CatBoostRegressor, frame: pd.DataFrame) -> np.ndarray:
-    """Predict expected demand, clipped to non-negative values."""
+    """Predict expected demand (lambda) per row, clipped to non-negative values."""
     preds = model.predict(_to_pool(frame, with_label=False))
     return np.clip(preds, 0.0, None)
+
+
+def predict_path(model: CatBoostRegressor, forecast_frame: pd.DataFrame) -> pd.DataFrame:
+    """Attach the predicted expected demand ``lam`` to a forward-path frame.
+
+    ``forecast_frame`` is the output of ``build_forecast_frame`` (``horizon`` rows
+    per SKU). The result is sorted by ``(sku_id, horizon)`` so downstream scenario
+    generation can pivot it straight into a per-SKU demand path.
+    """
+    out = forecast_frame.copy()
+    out["lam"] = predict(model, out)
+    return out.sort_values(["sku_id", "horizon"]).reset_index(drop=True)
