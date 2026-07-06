@@ -31,9 +31,9 @@ class Settings(BaseSettings):
     model_dir: Path = Path("models")
     model_path: Path = Path("models/catboost_demand.cbm")
 
-    # Walk-forward backtest: evaluate the last `folds * fold_days` days, one-step-ahead.
-    backtest_folds: int = 3
-    backtest_fold_days: int = 28
+    # Rolling-origin backtest: train on all but the last `holdout_days`, then roll the
+    # origin through the holdout scoring the full forward path (t+1 .. t+HORIZON).
+    backtest_holdout_days: int = 120
 
     # CatBoost compute device. "CPU" is the default and keeps the project fully
     # portable (runs anywhere with `docker compose up`, deterministic). For very

@@ -21,6 +21,7 @@ Two sources of uncertainty are injected:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,8 +35,8 @@ from inventory_forecast_ai.forecasting.model import predict_path
 
 log = structlog.get_logger(__name__)
 
-# Base coefficient of variation of the forecast at horizon 1 (provisional; F4 will
-# replace the whole curve with measured backtest residuals per horizon).
+# Fallback base coefficient of variation at horizon 1, used only when no measured
+# per-horizon forecast error is available yet (before a backtest has been run).
 _PROVISIONAL_CV_BASE: float = 0.15
 
 
@@ -58,12 +59,25 @@ class DemandScenarios:
 
 
 def _provisional_forecast_cv(horizon: int) -> np.ndarray:
-    """Per-horizon forecast coefficient of variation (placeholder, replaced in F4).
-
-    Grows like ``sqrt(h)`` to reflect that forecasts get less reliable further out.
-    """
+    """Fallback per-horizon forecast CV: grows like ``sqrt(h)`` (used only pre-backtest)."""
     h = np.arange(1, horizon + 1, dtype=float)
     return _PROVISIONAL_CV_BASE * np.sqrt(h)
+
+
+def _load_forecast_cv(settings: Settings, horizon: int) -> np.ndarray:
+    """Read the *measured* per-horizon forecast CV from the backtest, or fall back.
+
+    ``train`` persists ``forecast_cv`` (forecast error net of Poisson noise, per horizon)
+    in the forecast-metrics artifact. When it is present and the right length we widen
+    scenarios by the real uncertainty; otherwise we use the provisional curve.
+    """
+    path = settings.forecast_metrics_path
+    if path.exists():
+        cv = json.loads(path.read_text(encoding="utf-8")).get("forecast_cv")
+        if cv is not None and len(cv) == horizon:
+            return np.asarray(cv, dtype=float)
+        log.warning("forecast_cv_missing_or_mismatched", using="provisional")
+    return _provisional_forecast_cv(horizon)
 
 
 def _sample_demand(
@@ -122,7 +136,7 @@ def build_demand_scenarios(
     )  # (n_sku, horizon)
 
     rng = np.random.default_rng(seed)
-    cv = _provisional_forecast_cv(horizon)
+    cv = _load_forecast_cv(settings, horizon)
     demand = _sample_demand(rng, lam, cv, n_scenarios)
 
     econ = skus.loc[sku_ids]

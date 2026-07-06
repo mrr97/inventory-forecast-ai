@@ -1,4 +1,4 @@
-"""End-to-end training pipeline: features -> backtest -> MLflow -> saved model."""
+"""End-to-end training pipeline: features -> multi-horizon backtest -> MLflow -> model."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import pandas as pd
 import structlog
 
 from inventory_forecast_ai.config import Settings
-from inventory_forecast_ai.forecasting.backtest import BacktestResult, walk_forward
-from inventory_forecast_ai.forecasting.features import build_features
+from inventory_forecast_ai.forecasting.backtest import BacktestResult, backtest_forecast
+from inventory_forecast_ai.forecasting.features import build_training_frame
 from inventory_forecast_ai.forecasting.model import DEFAULT_PARAMS, build_params, train_model
 
 log = structlog.get_logger(__name__)
@@ -29,29 +29,36 @@ def _log_to_mlflow(settings: Settings, result: BacktestResult) -> None:
                 "iterations": DEFAULT_PARAMS["iterations"],
                 "depth": DEFAULT_PARAMS["depth"],
                 "learning_rate": DEFAULT_PARAMS["learning_rate"],
-                "backtest_folds": settings.backtest_folds,
-                "backtest_fold_days": settings.backtest_fold_days,
+                "horizon": result.horizon,
+                "backtest_holdout_days": settings.backtest_holdout_days,
             }
         )
-        for name in result.wape:
-            mlflow.log_metric(f"{name}_wape", result.wape[name])
-            mlflow.log_metric(f"{name}_mae", result.mae[name])
-        mlflow.log_metric("wape_improvement_vs_naive", result.wape_improvement_vs("naive"))
-        mlflow.log_metric(
-            "wape_improvement_vs_seasonal_naive",
-            result.wape_improvement_vs("seasonal_naive"),
-        )
+        mlflow.log_metric("wape_forward", result.wape["forward"])
+        mlflow.log_metric("wape_trailing", result.wape["trailing"])
+        mlflow.log_metric("mae_forward", result.mae["forward"])
+        mlflow.log_metric("wape_promo_forward", result.wape_promo["forward"])
+        mlflow.log_metric("wape_promo_trailing", result.wape_promo["trailing"])
+        mlflow.log_metric("improvement_vs_trailing", result.improvement_vs_trailing())
+        mlflow.log_metric("promo_improvement_vs_trailing", result.promo_improvement_vs_trailing())
 
 
 def _save_forecast_metrics(settings: Settings, result: BacktestResult) -> None:
-    """Persist the backtest metrics so the F4 scorecard can consolidate them."""
+    """Persist backtest metrics (incl. the per-horizon forecast CV) for downstream use.
+
+    The ``forecast_cv`` array is what the scenario generator reads to widen its samples
+    by the *measured* per-horizon forecast uncertainty.
+    """
     payload = {
+        "horizon": result.horizon,
         "wape": result.wape,
         "mae": result.mae,
-        "improvement_vs_naive": result.wape_improvement_vs("naive"),
-        "improvement_vs_seasonal_naive": result.wape_improvement_vs("seasonal_naive"),
-        "n_folds": result.n_folds,
-        "n_test_rows": result.n_test_rows,
+        "wape_promo": result.wape_promo,
+        "improvement_vs_trailing": result.improvement_vs_trailing(),
+        "promo_improvement_vs_trailing": result.promo_improvement_vs_trailing(),
+        "per_horizon_wape": result.per_horizon_wape,
+        "forecast_cv": result.forecast_cv,
+        "n_origins": result.n_origins,
+        "n_rows": result.n_rows,
     }
     path = settings.forecast_metrics_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,26 +66,23 @@ def _save_forecast_metrics(settings: Settings, result: BacktestResult) -> None:
 
 
 def train_and_evaluate(settings: Settings) -> BacktestResult:
-    """Build features, backtest CatBoost vs. baselines, log to MLflow, save the model.
+    """Backtest the forward forecast vs. the trailing mean, log to MLflow, save the model.
 
     Returns the backtest result so the caller can present a summary.
     """
     demand = pd.read_csv(settings.demand_path)
     skus = pd.read_csv(settings.skus_path)
-    features = build_features(demand, skus)
-    log.info("features_built", rows=len(features), skus=skus["sku_id"].nunique())
 
     params = build_params(settings.catboost_task_type)
-    result = walk_forward(
-        features,
-        folds=settings.backtest_folds,
-        fold_days=settings.backtest_fold_days,
-        params=params,
+    result = backtest_forecast(
+        demand, skus, holdout_days=settings.backtest_holdout_days, params=params
     )
     _log_to_mlflow(settings, result)
     _save_forecast_metrics(settings, result)
 
-    # Final model trained on all available history, for downstream optimization (F3).
+    # Final model trained on all available history, for downstream optimization.
+    features = build_training_frame(demand, skus)
+    log.info("features_built", rows=len(features), skus=skus["sku_id"].nunique())
     final_model = train_model(features, params)
     model_path: Path = settings.model_path
     model_path.parent.mkdir(parents=True, exist_ok=True)

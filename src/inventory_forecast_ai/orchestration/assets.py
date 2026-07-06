@@ -44,9 +44,9 @@ def trained_model(context: AssetExecutionContext) -> MaterializeResult:
     result = train_and_evaluate(settings)
     return MaterializeResult(
         metadata={
-            "catboost_wape": round(result.wape["catboost"], 4),
-            "improvement_vs_naive": MetadataValue.float(result.wape_improvement_vs("naive")),
-            "test_rows": result.n_test_rows,
+            "wape_forward": round(result.wape["forward"], 4),
+            "improvement_vs_trailing": MetadataValue.float(result.improvement_vs_trailing()),
+            "n_rows": result.n_rows,
         }
     )
 

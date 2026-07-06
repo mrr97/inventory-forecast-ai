@@ -54,7 +54,7 @@ def generate_demo(
 
 @app.command()
 def train() -> None:
-    """Backtest CatBoost vs. naive baselines (walk-forward), log to MLflow, save model."""
+    """Backtest the forward forecast vs. the trailing mean, log to MLflow, save model."""
     settings = get_settings()
     configure_logging(level=settings.log_level, json_logs=settings.json_logs)
 
@@ -64,17 +64,16 @@ def train() -> None:
 
     typer.echo("")
     typer.echo(
-        f"Walk-forward backtest — {result.n_folds} folds, {result.n_test_rows} one-step-ahead "
-        f"predictions"
+        f"Rolling-origin backtest — {result.n_origins} origins, {result.n_rows} forecasts "
+        f"over a {result.horizon}-day horizon"
     )
     typer.echo(f"{'model':<16}{'WAPE':>10}{'MAE':>10}")
-    for name in ("naive", "seasonal_naive", "catboost"):
+    for name in ("forward", "trailing"):
         typer.echo(f"{name:<16}{result.wape[name]:>10.4f}{result.mae[name]:>10.3f}")
     typer.echo("")
     typer.echo(
-        f"CatBoost WAPE improvement: "
-        f"{result.wape_improvement_vs('naive'):.1%} vs naive, "
-        f"{result.wape_improvement_vs('seasonal_naive'):.1%} vs seasonal-naive"
+        f"Forward vs trailing: {result.improvement_vs_trailing():.1%} lower WAPE overall, "
+        f"{result.promo_improvement_vs_trailing():.1%} on promo days"
     )
     typer.echo(f"Saved model -> {settings.model_path}")
 
@@ -127,11 +126,11 @@ def metrics() -> None:
     opt = report["optimization"]
 
     typer.echo("")
-    typer.echo("Forecast accuracy (walk-forward backtest)")
-    typer.echo(f"  CatBoost WAPE {fc['wape']['catboost']:.3f}")
+    typer.echo("Forecast accuracy (rolling-origin backtest)")
+    typer.echo(f"  forward WAPE {fc['wape']['forward']:.3f} vs trailing {fc['wape']['trailing']:.3f}")
     typer.echo(
-        f"  improvement: {fc['improvement_vs_naive']:.1%} vs naive, "
-        f"{fc['improvement_vs_seasonal_naive']:.1%} vs seasonal-naive"
+        f"  improvement: {fc['improvement_vs_trailing']:.1%} overall, "
+        f"{fc['promo_improvement_vs_trailing']:.1%} on promo days"
     )
     typer.echo("")
     typer.echo("Inventory cost vs. service (Pareto frontier)")

@@ -33,12 +33,14 @@ def _load_json(path: Path, *, produced_by: str) -> dict:
 
 def _forecast_block(forecast: dict) -> dict:
     return {
-        "wape": forecast["wape"],
+        "horizon": forecast["horizon"],
+        "wape": forecast["wape"],  # {"forward", "trailing"}
         "mae": forecast["mae"],
-        "improvement_vs_naive": forecast["improvement_vs_naive"],
-        "improvement_vs_seasonal_naive": forecast["improvement_vs_seasonal_naive"],
-        "n_folds": forecast["n_folds"],
-        "n_test_rows": forecast["n_test_rows"],
+        "wape_promo": forecast["wape_promo"],
+        "improvement_vs_trailing": forecast["improvement_vs_trailing"],
+        "promo_improvement_vs_trailing": forecast["promo_improvement_vs_trailing"],
+        "n_origins": forecast["n_origins"],
+        "n_rows": forecast["n_rows"],
     }
 
 
@@ -59,7 +61,10 @@ def _optimization_block(pareto: dict) -> dict:
 
 
 def _headline(forecast: dict, optimization: dict) -> dict[str, str]:
-    fc = f"CatBoost cuts forecast error (WAPE) {forecast['improvement_vs_naive']:.0%} vs. naive"
+    fc = (
+        f"Forward forecast cuts error (WAPE) {forecast['improvement_vs_trailing']:.0%} vs. the "
+        f"trailing mean, {forecast['promo_improvement_vs_trailing']:.0%} on promo days"
+    )
     saving = optimization["cost_saving_pct"]
     opt = (
         f"At the baseline's service level, optimization cuts operating cost {saving:.0%}"
