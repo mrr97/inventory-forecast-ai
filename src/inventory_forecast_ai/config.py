@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # report the dashboard reads and the README cites.
     forecast_metrics_path: Path = Path("data/metrics/forecast.json")
     report_path: Path = Path("data/metrics/report.json")
+    # Decision-level forward-vs-trailing comparison on the most seasonal stretch.
+    comparison_path: Path = Path("data/metrics/comparison.json")
 
     # Dash UI — wired up in F3
     ui_host: str = "127.0.0.1"

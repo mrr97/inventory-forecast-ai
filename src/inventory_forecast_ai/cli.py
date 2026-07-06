@@ -143,6 +143,32 @@ def metrics() -> None:
 
 
 @app.command()
+def compare() -> None:
+    """Decision-level forward-vs-trailing cost comparison on the most seasonal stretch."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=settings.json_logs)
+
+    from inventory_forecast_ai.evaluation.comparison import run_comparison
+
+    res = run_comparison(settings)
+
+    typer.echo("")
+    typer.echo(f"Seasonal stretch {res.window_start}..{res.window_end} — {res.n_origins} weekly origins")
+    typer.echo(f"{'policy':<10}{'total cost':>13}{'operating':>12}{'lost sales':>12}{'service':>11}")
+    for name, tot, op, svc in (
+        ("forward", res.forward_cost, res.forward_operating, res.forward_service),
+        ("trailing", res.trailing_cost, res.trailing_operating, res.trailing_service),
+    ):
+        typer.echo(f"{name:<10}{tot:>13.0f}{op:>12.0f}{tot - op:>12.0f}{svc:>11.1%}")
+    typer.echo("")
+    typer.echo(
+        f"Forward cuts total cost {res.cost_reduction:.1%} (fewer lost sales) "
+        f"at {res.service_gain * 100:+.1f} pp service."
+    )
+    typer.echo(f"Saved comparison -> {settings.comparison_path}")
+
+
+@app.command()
 def pipeline() -> None:
     """Run the whole Dagster pipeline: generate-demo -> train -> optimize -> metrics."""
     settings = get_settings()
