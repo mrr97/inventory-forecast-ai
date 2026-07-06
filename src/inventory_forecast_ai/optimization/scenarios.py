@@ -1,14 +1,22 @@
-"""Turn the demand forecast into Monte-Carlo demand scenarios.
+"""Turn the *forward* demand forecast into Monte-Carlo demand scenarios.
 
-The CatBoost model was trained with a Poisson loss, so its prediction for a given
-day is the expected demand ``lambda``. We sample ``Poisson(lambda)`` to obtain a
-distribution of plausible demand paths over the planning horizon — exactly the
-uncertainty the optimizer needs to weigh service against cost. Using Poisson here
-is consistent with the model that produced ``lambda``.
+The model predicts the expected demand ``lambda`` for each of the next ``HORIZON``
+days (the forward path from ``build_forecast_frame``). We sample demand around that
+path so the optimizer sees the range of plausible futures it must provision for —
+this is what makes the (s, S) policy anticipate promotions and seasonality instead
+of chasing the recent past.
 
-The horizon is the most recent ``horizon_days`` of history per SKU: a representative
-demand period whose model means drive the scenarios (we are generating plausible
-demand, not measuring forecast accuracy, so this is leakage-free by construction).
+Two sources of uncertainty are injected:
+
+1. **Demand randomness given lambda** — the Poisson count noise.
+2. **Forecast uncertainty** — ``lambda`` is itself an estimate, and it gets less
+   reliable further out. We widen the Poisson mean by a per-horizon factor (a
+   Gamma multiplier, giving a Negative-Binomial-style spread) so scenarios are not
+   over-confident. The widening grows with the horizon.
+
+   NOTE (F2 provisional): the per-horizon spread is a placeholder that grows like
+   ``sqrt(h)``. F4 replaces ``_provisional_forecast_cv`` with the **measured**
+   per-horizon forecast error (backtest residuals), which is the honest calibration.
 """
 
 from __future__ import annotations
@@ -21,10 +29,14 @@ import structlog
 from catboost import CatBoostRegressor
 
 from inventory_forecast_ai.config import Settings
-from inventory_forecast_ai.forecasting.features import build_features
-from inventory_forecast_ai.forecasting.model import predict
+from inventory_forecast_ai.forecasting.features import HORIZON, build_forecast_frame
+from inventory_forecast_ai.forecasting.model import predict_path
 
 log = structlog.get_logger(__name__)
+
+# Base coefficient of variation of the forecast at horizon 1 (provisional; F4 will
+# replace the whole curve with measured backtest residuals per horizon).
+_PROVISIONAL_CV_BASE: float = 0.15
 
 
 @dataclass(frozen=True)
@@ -45,38 +57,73 @@ class DemandScenarios:
         return len(self.sku_ids)
 
 
+def _provisional_forecast_cv(horizon: int) -> np.ndarray:
+    """Per-horizon forecast coefficient of variation (placeholder, replaced in F4).
+
+    Grows like ``sqrt(h)`` to reflect that forecasts get less reliable further out.
+    """
+    h = np.arange(1, horizon + 1, dtype=float)
+    return _PROVISIONAL_CV_BASE * np.sqrt(h)
+
+
+def _sample_demand(
+    rng: np.random.Generator, lam: np.ndarray, cv: np.ndarray, n_scenarios: int
+) -> np.ndarray:
+    """Sample widened-Poisson demand scenarios.
+
+    Args:
+        lam: (n_sku, horizon) expected demand per day of the forward path.
+        cv: (horizon,) forecast coefficient of variation per horizon.
+        n_scenarios: number of Monte-Carlo paths.
+
+    Returns:
+        (n_sku, n_scenarios, horizon) non-negative integer demand. For each scenario
+        we draw a Gamma multiplier with mean 1 and the given per-horizon CV (Gamma-
+        Poisson = Negative Binomial), then sample Poisson of the widened mean.
+    """
+    n_sku, horizon = lam.shape
+    lam_b = lam[:, None, :]  # (n_sku, 1, horizon)
+    cv_b = np.clip(cv, 1e-6, None)[None, None, :]  # (1, 1, horizon)
+    # Gamma factor: mean 1, variance cv**2  ->  shape = 1/cv**2, scale = cv**2.
+    shape = 1.0 / cv_b**2
+    scale = cv_b**2
+    factor = rng.gamma(shape=shape, scale=scale, size=(n_sku, n_scenarios, horizon))
+    return rng.poisson(np.clip(lam_b * factor, 0.0, None)).astype(float)
+
+
 def build_demand_scenarios(
     settings: Settings,
     *,
-    horizon: int | None = None,
+    horizon: int = HORIZON,
     n_scenarios: int | None = None,
     seed: int | None = None,
+    origin_date=None,
 ) -> DemandScenarios:
-    """Load data + model, forecast the planning horizon, sample Poisson scenarios."""
-    horizon = horizon if horizon is not None else settings.opt_horizon_days
+    """Load data + model, forecast the forward window, sample widened-Poisson scenarios."""
     n_scenarios = n_scenarios if n_scenarios is not None else settings.opt_scenarios
     seed = seed if seed is not None else settings.opt_seed
 
     demand_df = pd.read_csv(settings.demand_path)
     skus = pd.read_csv(settings.skus_path).set_index("sku_id")
 
-    features = build_features(demand_df, skus.reset_index())
     model = CatBoostRegressor()
     model.load_model(str(settings.model_path))
-    features = features.assign(lam=predict(model, features))
 
-    # Last `horizon` days per SKU form the planning window.
-    window = (
-        features.sort_values("date")
-        .groupby("sku_id", observed=True)
-        .tail(horizon)
-        .sort_values(["sku_id", "date"])
+    forecast = build_forecast_frame(
+        demand_df, skus.reset_index(), origin_date=origin_date, horizon=horizon
     )
-    sku_ids = sorted(window["sku_id"].unique())
-    lam = np.stack([window.loc[window["sku_id"] == s, "lam"].to_numpy() for s in sku_ids])
+    path = predict_path(model, forecast)  # sorted by (sku_id, horizon)
+
+    sku_ids = sorted(path["sku_id"].unique())
+    lam = (
+        path.pivot(index="sku_id", columns="horizon", values="lam")
+        .loc[sku_ids]
+        .to_numpy()
+    )  # (n_sku, horizon)
 
     rng = np.random.default_rng(seed)
-    demand = rng.poisson(lam[:, None, :].repeat(n_scenarios, axis=1)).astype(float)
+    cv = _provisional_forecast_cv(horizon)
+    demand = _sample_demand(rng, lam, cv, n_scenarios)
 
     econ = skus.loc[sku_ids]
     scenarios = DemandScenarios(
@@ -94,5 +141,6 @@ def build_demand_scenarios(
         skus=scenarios.n_sku,
         scenarios=n_scenarios,
         horizon=horizon,
+        forward_from=str(forecast["date"].min().date()),
     )
     return scenarios
