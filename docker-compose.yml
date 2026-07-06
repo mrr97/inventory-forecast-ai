@@ -1,5 +1,5 @@
 # `docker compose up` builds the whole pipeline once, then serves the dashboard.
-#   - pipeline : runs the Dagster asset graph (demo -> train -> optimize -> metrics)
+#   - pipeline : runs the Dagster asset graph (demo -> {train -> optimize, compare} -> scorecard)
 #   - dashboard: Dash UI at http://localhost:8050 (waits for the pipeline to finish)
 #   - dagster  : Dagster UI at http://localhost:3000 (the asset graph, materialize on demand)
 # Data and the trained model are shared between services through named volumes.
