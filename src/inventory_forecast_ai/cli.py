@@ -127,7 +127,9 @@ def metrics() -> None:
 
     typer.echo("")
     typer.echo("Forecast accuracy (rolling-origin backtest)")
-    typer.echo(f"  forward WAPE {fc['wape']['forward']:.3f} vs trailing {fc['wape']['trailing']:.3f}")
+    typer.echo(
+        f"  forward WAPE {fc['wape']['forward']:.3f} vs trailing {fc['wape']['trailing']:.3f}"
+    )
     typer.echo(
         f"  improvement: {fc['improvement_vs_trailing']:.1%} overall, "
         f"{fc['promo_improvement_vs_trailing']:.1%} on promo days"
@@ -153,8 +155,12 @@ def compare() -> None:
     res = run_comparison(settings)
 
     typer.echo("")
-    typer.echo(f"Seasonal stretch {res.window_start}..{res.window_end} — {res.n_origins} weekly origins")
-    typer.echo(f"{'policy':<10}{'total cost':>13}{'operating':>12}{'lost sales':>12}{'service':>11}")
+    typer.echo(
+        f"Seasonal stretch {res.window_start}..{res.window_end} — {res.n_origins} weekly origins"
+    )
+    typer.echo(
+        f"{'policy':<10}{'total cost':>13}{'operating':>12}{'lost sales':>12}{'service':>11}"
+    )
     for name, tot, op, svc in (
         ("forward", res.forward_cost, res.forward_operating, res.forward_service),
         ("trailing", res.trailing_cost, res.trailing_operating, res.trailing_service),
@@ -178,7 +184,8 @@ def pipeline() -> None:
 
     typer.echo("")
     typer.echo(
-        "Materializing asset graph: demo_data -> trained_model -> pareto_frontier -> scorecard"
+        "Materializing asset graph: demo_data -> {trained_model -> pareto_frontier, "
+        "forward_vs_trailing} -> scorecard"
     )
     success = run_pipeline()
     if not success:

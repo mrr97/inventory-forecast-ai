@@ -4,26 +4,60 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
 
 from inventory_forecast_ai.config import Settings
-from inventory_forecast_ai.forecasting.features import build_features
-from inventory_forecast_ai.forecasting.model import predict
+from inventory_forecast_ai.forecasting.features import TARGET, build_forecast_frame
+from inventory_forecast_ai.forecasting.model import predict_path
 
 
-def load_forecast_frame(settings: Settings, *, tail_days: int = 90) -> pd.DataFrame:
-    """Return recent actual-vs-predicted demand per SKU for the forecast view."""
+def load_forecast_frame(settings: Settings, *, history_days: int = 60) -> pd.DataFrame:
+    """Return recent history plus the forward forecast path per SKU for the chart.
+
+    Each SKU gets ``history_days`` of recent actuals (``forecast`` NaN) followed by the
+    model's forward path over the protection window, where ``actual`` is what really
+    happened and ``forecast`` is the predicted demand. Plotting both shows the model
+    projecting *forward*, not fitting the past.
+    """
     demand = pd.read_csv(settings.demand_path)
+    demand["date"] = pd.to_datetime(demand["date"])
     skus = pd.read_csv(settings.skus_path)
-    feats = build_features(demand, skus)
 
     model = CatBoostRegressor()
     model.load_model(str(settings.model_path))
-    feats = feats.assign(predicted=predict(model, feats), actual=feats["units_sold"])
+    path = predict_path(model, build_forecast_frame(demand, skus))
 
-    recent = feats.sort_values("date").groupby("sku_id", observed=True).tail(tail_days)
-    return recent[["date", "sku_id", "actual", "predicted"]].reset_index(drop=True)
+    frames: list[pd.DataFrame] = []
+    for sku_id, fc in path.groupby("sku_id", observed=True):
+        window_start = fc["date"].min()
+        hist = (
+            demand[(demand["sku_id"] == sku_id) & (demand["date"] < window_start)]
+            .sort_values("date")
+            .tail(history_days)
+        )
+        frames.append(
+            pd.DataFrame(
+                {
+                    "date": hist["date"],
+                    "sku_id": sku_id,
+                    "actual": hist["units_sold"].astype(float),
+                    "forecast": np.nan,
+                }
+            )
+        )
+        frames.append(
+            pd.DataFrame(
+                {
+                    "date": fc["date"],
+                    "sku_id": sku_id,
+                    "actual": fc[TARGET].astype(float),
+                    "forecast": fc["lam"].to_numpy(),
+                }
+            )
+        )
+    return pd.concat(frames, ignore_index=True)
 
 
 def load_pareto(settings: Settings) -> dict | None:

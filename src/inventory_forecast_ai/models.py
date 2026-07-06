@@ -24,7 +24,7 @@ class Category(StrEnum):
 class Sku(BaseModel):
     """A stock-keeping unit and its economics.
 
-    The cost fields feed the inventory optimizer (F3): holding cost penalises
+    The cost fields feed the inventory optimizer: holding cost penalises
     excess stock, ordering cost penalises frequent replenishment, and the lead
     time governs how early an order must be placed.
     """

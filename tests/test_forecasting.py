@@ -1,4 +1,4 @@
-"""Tests for feature engineering, metrics and the walk-forward backtest."""
+"""Tests for multi-horizon feature engineering, metrics and the rolling backtest."""
 
 from datetime import date
 
@@ -7,26 +7,36 @@ import pandas as pd
 import pytest
 
 from inventory_forecast_ai.demo.generator import generate_demo_data
-from inventory_forecast_ai.forecasting.backtest import walk_forward
+from inventory_forecast_ai.forecasting.backtest import backtest_forecast
 from inventory_forecast_ai.forecasting.features import (
     FEATURES,
     TARGET,
-    build_features,
+    build_forecast_frame,
+    build_training_frame,
 )
 from inventory_forecast_ai.forecasting.metrics import mae, wape
+
+_TINY = {
+    "loss_function": "Poisson",
+    "iterations": 40,
+    "depth": 4,
+    "random_seed": 42,
+    "verbose": False,
+    "allow_writing_files": False,
+}
 
 
 @pytest.fixture(scope="module")
 def demo(tmp_path_factory) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Small but multi-month dataset so lags/rolling windows are populated."""
+    """Several months of data so lags/rolling windows and a holdout are populated."""
     d = tmp_path_factory.mktemp("data")
     generate_demo_data(
         d / "skus.csv",
         d / "demand.csv",
-        count=6,
+        count=4,
         seed=42,
         start_date=date(2024, 1, 1),
-        end_date=date(2024, 6, 30),
+        end_date=date(2024, 8, 31),
     )
     return pd.read_csv(d / "demand.csv"), pd.read_csv(d / "skus.csv")
 
@@ -39,41 +49,40 @@ def test_metrics_basic():
     assert np.isnan(wape(np.array([0.0, 0.0]), np.array([1.0, 2.0])))
 
 
-def test_build_features_has_all_columns_and_no_leakage_nans(demo):
+def test_training_frame_columns_and_no_leakage(demo):
     demand, skus = demo
-    feats = build_features(demand, skus)
+    train = build_training_frame(demand, skus, horizon=7)
     for col in [*FEATURES, TARGET]:
-        assert col in feats.columns
-    # Warm-up rows dropped -> no NaNs left in the lag/rolling features.
-    assert not feats[["lag_1", "lag_7", "lag_28", "roll_mean_28", "roll_std_7"]].isna().any().any()
-    # Lags must equal the actual prior values within each SKU.
-    one = feats[feats["sku_id"] == feats["sku_id"].iloc[0]].sort_values("date")
-    assert (one["lag_1"].to_numpy()[1:] == one[TARGET].to_numpy()[:-1]).all()
+        assert col in train.columns
+    # Warm-up origins dropped -> no NaNs left in any model feature.
+    assert not train[list(FEATURES)].isna().any().any()
+    assert set(train["horizon"]) == set(range(1, 8))
+    # For horizon 1 the origin is t-1, so recent_demand at t must equal the actual at t-1.
+    h1 = train[train["horizon"] == 1]
+    one = h1[h1["sku_id"] == h1["sku_id"].iloc[0]].sort_values("date")
+    assert (one["recent_demand"].to_numpy()[1:] == one[TARGET].to_numpy()[:-1]).all()
 
 
-def test_walk_forward_structure_and_improvement_metric(demo):
+def test_forecast_frame_is_one_path_per_sku(demo):
     demand, skus = demo
-    feats = build_features(demand, skus)
-    # Tiny model keeps this a fast plumbing check; the real accuracy gain is shown
-    # by the full `train` run, not asserted here on an under-powered config.
-    result = walk_forward(
-        feats,
-        folds=2,
-        fold_days=14,
-        params={
-            "loss_function": "Poisson",
-            "iterations": 50,
-            "depth": 4,
-            "random_seed": 42,
-            "verbose": False,
-            "allow_writing_files": False,
-        },
-    )
-    assert result.n_folds == 2
-    assert result.n_test_rows > 0
-    assert set(result.wape) == {"naive", "seasonal_naive", "catboost"}
+    fc = build_forecast_frame(demand, skus, horizon=7)
+    assert set(fc["horizon"]) == set(range(1, 8))
+    per_sku = fc.groupby("sku_id").size()
+    assert (per_sku == 7).all()
+    for col in FEATURES:
+        assert col in fc.columns
+
+
+def test_backtest_reports_forward_and_trailing(demo):
+    demand, skus = demo
+    result = backtest_forecast(demand, skus, holdout_days=30, horizon=7, params=_TINY)
+    assert result.horizon == 7
+    assert result.n_origins > 0
+    assert set(result.wape) == {"forward", "trailing"}
     assert all(v >= 0 for v in result.wape.values())
-    assert len(result.per_fold) == 2
+    assert len(result.forecast_cv) == 7
+    assert all(cv >= 0 for cv in result.forecast_cv)
+    assert len(result.per_horizon_wape["forward"]) == 7
     # Improvement metric is consistent with the raw WAPEs.
-    expected = (result.wape["naive"] - result.wape["catboost"]) / result.wape["naive"]
-    assert result.wape_improvement_vs("naive") == pytest.approx(expected)
+    expected = (result.wape["trailing"] - result.wape["forward"]) / result.wape["trailing"]
+    assert result.improvement_vs_trailing() == pytest.approx(expected)

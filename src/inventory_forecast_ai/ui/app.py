@@ -19,12 +19,14 @@ def _forecast_figure(frame, sku_id: str) -> go.Figure:
     fig.add_scatter(
         x=one["date"], y=one["actual"], name="Actual", mode="lines", line={"color": _SLATE}
     )
+    # Forecast is populated only over the forward window (NaN in the history part).
     fig.add_scatter(
         x=one["date"],
-        y=one["predicted"],
-        name="Forecast",
+        y=one["forecast"],
+        name="Forward forecast",
         mode="lines",
         line={"color": _TEAL, "dash": "dash"},
+        connectgaps=False,
     )
     fig.update_layout(
         margin={"t": 30, "r": 10, "b": 30, "l": 40},
@@ -95,32 +97,39 @@ def _scorecard_children(report: dict | None) -> list:
         ]
     fc = report["forecast"]
     opt = report["optimization"]
+    decision = report.get("decision")
     saving = opt["cost_saving_pct"]
+    cards_children = [
+        _metric_card(
+            "Forecast error (WAPE)",
+            f"{fc['wape']['forward']:.3f}",
+            f"{fc['improvement_vs_trailing']:.0%} better than the trailing mean",
+        ),
+        _metric_card(
+            "Cost saving",
+            "—" if saving is None else f"{saving:.0%}",
+            "at the baseline's service level",
+        ),
+    ]
+    if decision is not None:
+        cards_children.append(
+            _metric_card(
+                "Seasonal-stretch cost cut",
+                f"{decision['cost_reduction']:.0%}",
+                f"{decision['service_gain'] * 100:+.1f} pp service vs. trailing",
+            )
+        )
     cards = html.Div(
         style={"display": "flex", "flexWrap": "wrap", "gap": "12px", "marginTop": "8px"},
-        children=[
-            _metric_card(
-                "Forecast error (WAPE)",
-                f"{fc['wape']['catboost']:.3f}",
-                f"{fc['improvement_vs_naive']:.0%} better than naive",
-            ),
-            _metric_card(
-                "Cost saving",
-                "—" if saving is None else f"{saving:.0%}",
-                "at the baseline's service level",
-            ),
-            _metric_card(
-                "Service level",
-                f"{opt['baseline_service']:.1%}",
-                f"across {opt['n_pareto_points']} Pareto policies",
-            ),
-        ],
+        children=cards_children,
     )
-    return [
+    paragraphs = [
         html.P(report["headline"]["forecast"] + ".", style={"color": _SLATE}),
         html.P(report["headline"]["optimization"] + ".", style={"color": _SLATE}),
-        cards,
     ]
+    if "decision" in report["headline"]:
+        paragraphs.append(html.P(report["headline"]["decision"] + ".", style={"color": _SLATE}))
+    return [*paragraphs, cards]
 
 
 def create_app(settings: Settings | None = None) -> Dash:
@@ -143,7 +152,10 @@ def create_app(settings: Settings | None = None) -> Dash:
     forecast_tab = dcc.Tab(
         label="Demand forecast",
         children=[
-            html.P("Actual vs. CatBoost forecast for the selected SKU.", style={"color": _SLATE}),
+            html.P(
+                "Recent demand and the model's forward forecast for the selected SKU.",
+                style={"color": _SLATE},
+            ),
             dcc.Dropdown(
                 id="sku-dropdown",
                 options=[{"label": s, "value": s} for s in sku_ids],

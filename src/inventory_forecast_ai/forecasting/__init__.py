@@ -1,1 +1,1 @@
-"""Demand forecasting: features, baselines, CatBoost model and walk-forward backtest."""
+"""Demand forecasting: multi-horizon features, CatBoost model and rolling-origin backtest."""

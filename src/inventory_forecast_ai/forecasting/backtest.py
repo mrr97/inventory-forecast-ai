@@ -14,7 +14,7 @@ Two things come out of it:
   mean is blind and the forward model should win clearly.
 - **Per-horizon forecast uncertainty.** For each horizon we estimate the forecast-error
   spread *after removing the Poisson count noise*, so the scenario generator can widen
-  its samples by the **measured** uncertainty (replacing F2's provisional placeholder).
+  its samples by the **measured** uncertainty (replacing its provisional placeholder).
 """
 
 from __future__ import annotations

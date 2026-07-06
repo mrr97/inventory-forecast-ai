@@ -71,7 +71,9 @@ class ComparisonResult:
         return float(self.forward_service - self.trailing_service)
 
 
-def _pick_seasonal_window(dates: np.ndarray, totals: np.ndarray, window_days: int, min_history: int) -> int:
+def _pick_seasonal_window(
+    dates: np.ndarray, totals: np.ndarray, window_days: int, min_history: int
+) -> int:
     """Return the origin index of the steepest demand ramp (most seasonal stretch)."""
     n = len(dates)
     best_i, best_slope = min_history, -1.0
@@ -89,7 +91,9 @@ def _matrix(frame: pd.DataFrame, sku_ids: list[str], col: str) -> np.ndarray:
     return frame.pivot(index="sku_id", columns="horizon", values=col).loc[sku_ids].to_numpy()
 
 
-def _scenarios(sku_ids: list[str], econ: pd.DataFrame, demand: np.ndarray, mean_daily: np.ndarray) -> DemandScenarios:
+def _scenarios(
+    sku_ids: list[str], econ: pd.DataFrame, demand: np.ndarray, mean_daily: np.ndarray
+) -> DemandScenarios:
     """Assemble a DemandScenarios (demand shape (n_sku, n_scen, horizon))."""
     return DemandScenarios(
         sku_ids=sku_ids,
@@ -213,7 +217,9 @@ def run_comparison(settings: Settings) -> ComparisonResult:
     """Run the seasonal-stretch comparison end-to-end and persist it."""
     demand = pd.read_csv(settings.demand_path)
     skus = pd.read_csv(settings.skus_path)
-    result = compare_forward_vs_trailing(demand, skus, params=build_params(settings.catboost_task_type))
+    result = compare_forward_vs_trailing(
+        demand, skus, params=build_params(settings.catboost_task_type)
+    )
     save_comparison(result, settings.comparison_path)
     log.info("comparison_saved", path=str(settings.comparison_path))
     return result

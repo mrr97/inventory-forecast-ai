@@ -1,4 +1,4 @@
-"""Tests for the consolidated metrics scorecard (F4)."""
+"""Tests for the consolidated metrics scorecard (forecast + optimization + decision)."""
 
 import json
 
@@ -12,20 +12,25 @@ from inventory_forecast_ai.evaluation.report import (
 
 
 class _Settings:
-    def __init__(self, forecast_path, pareto_path, report_path):
+    def __init__(self, forecast_path, pareto_path, report_path, comparison_path):
         self.forecast_metrics_path = forecast_path
         self.pareto_path = pareto_path
         self.report_path = report_path
+        self.comparison_path = comparison_path
 
 
 def _forecast_json() -> dict:
     return {
-        "wape": {"naive": 0.227, "seasonal_naive": 0.271, "catboost": 0.137},
-        "mae": {"naive": 8.98, "seasonal_naive": 10.72, "catboost": 5.43},
-        "improvement_vs_naive": 0.396,
-        "improvement_vs_seasonal_naive": 0.494,
-        "n_folds": 3,
-        "n_test_rows": 1848,
+        "horizon": 14,
+        "wape": {"forward": 0.131, "trailing": 0.253},
+        "mae": {"forward": 5.43, "trailing": 10.72},
+        "wape_promo": {"forward": 0.118, "trailing": 0.477},
+        "improvement_vs_trailing": 0.482,
+        "promo_improvement_vs_trailing": 0.753,
+        "per_horizon_wape": {"forward": [0.13] * 14, "trailing": [0.25] * 14},
+        "forecast_cv": [0.09] * 14,
+        "n_origins": 106,
+        "n_rows": 32648,
     }
 
 
@@ -41,41 +46,59 @@ def _pareto_json() -> dict:
     }
 
 
-def _settings(tmp_path) -> _Settings:
+def _comparison_json() -> dict:
+    return {
+        "window_start": "2025-08-09",
+        "window_end": "2025-10-08",
+        "n_origins": 9,
+        "forward_cost": 2749.0,
+        "trailing_cost": 3385.0,
+        "forward_operating": 2361.0,
+        "trailing_operating": 2346.0,
+        "forward_service": 0.993,
+        "trailing_service": 0.983,
+        "cost_reduction": 0.188,
+        "service_gain": 0.0108,
+        "per_origin": [],
+    }
+
+
+def _settings(tmp_path, *, with_comparison: bool = True) -> _Settings:
     fpath = tmp_path / "forecast.json"
     ppath = tmp_path / "pareto.json"
+    cpath = tmp_path / "comparison.json"
     fpath.write_text(json.dumps(_forecast_json()), encoding="utf-8")
     ppath.write_text(json.dumps(_pareto_json()), encoding="utf-8")
-    return _Settings(fpath, ppath, tmp_path / "report.json")
+    if with_comparison:
+        cpath.write_text(json.dumps(_comparison_json()), encoding="utf-8")
+    return _Settings(fpath, ppath, tmp_path / "report.json", cpath)
 
 
-def test_build_report_consolidates_both_halves(tmp_path):
+def test_build_report_consolidates_all_parts(tmp_path):
     report = build_report(_settings(tmp_path))
 
-    assert report["forecast"]["wape"]["catboost"] == 0.137
+    assert report["forecast"]["wape"]["forward"] == 0.131
     assert report["optimization"]["n_pareto_points"] == 2
-    assert report["optimization"]["cost_saving_pct"] == 0.12
-    # Cheapest and best-service points are picked correctly from the frontier.
+    assert report["decision"]["cost_reduction"] == 0.188
     assert report["optimization"]["cheapest_cost"] == 3072.0
-    assert report["optimization"]["best_service"] == 1.0
-    assert "40%" in report["headline"]["forecast"]
+    assert "48%" in report["headline"]["forecast"]
+    assert "75%" in report["headline"]["forecast"]
     assert "12%" in report["headline"]["optimization"]
+    assert "19%" in report["headline"]["decision"]
 
 
-def test_build_report_handles_missing_cost_saving(tmp_path):
-    settings = _settings(tmp_path)
-    data = json.loads(settings.pareto_path.read_text())
-    data["cost_saving_pct"] = None
-    settings.pareto_path.write_text(json.dumps(data), encoding="utf-8")
-
-    report = build_report(settings)
-    assert report["optimization"]["cost_saving_pct"] is None
-    assert "no cost saving" in report["headline"]["optimization"].lower()
+def test_build_report_without_comparison_degrades_gracefully(tmp_path):
+    report = build_report(_settings(tmp_path, with_comparison=False))
+    assert "decision" not in report
+    assert "decision" not in report["headline"]
 
 
 def test_build_report_errors_clearly_when_artifact_missing(tmp_path):
     settings = _Settings(
-        tmp_path / "absent.json", tmp_path / "absent2.json", tmp_path / "report.json"
+        tmp_path / "absent.json",
+        tmp_path / "absent2.json",
+        tmp_path / "report.json",
+        tmp_path / "absent3.json",
     )
     with pytest.raises(MissingArtifactError, match="train"):
         build_report(settings)

@@ -21,13 +21,12 @@ class Settings(BaseSettings):
     demo_start_date: date = date(2024, 1, 1)
     demo_end_date: date = date(2025, 12, 31)
 
-    # MLflow experiment tracking (local file store, no server) — wired up in F2
-    # Local SQLite backend = no server, single file. (MLflow deprecated the bare
-    # file store; SQLite is the recommended serverless local backend.)
+    # MLflow experiment tracking. Local SQLite backend = no server, single file.
+    # (MLflow deprecated the bare file store; SQLite is the recommended local backend.)
     mlflow_tracking_uri: str = "sqlite:///mlflow.db"
     mlflow_experiment: str = "demand-forecast"
 
-    # Trained model artifact (CatBoost) — produced in F2, consumed in F3
+    # Trained model artifact (CatBoost) — produced by `train`, consumed by `optimize`.
     model_dir: Path = Path("models")
     model_path: Path = Path("models/catboost_demand.cbm")
 
@@ -54,15 +53,15 @@ class Settings(BaseSettings):
     inventory_budget: float | None = None
     pareto_path: Path = Path("data/optimization/pareto.json")
 
-    # Consolidated metrics scorecard (F4). `train` writes the forecast metrics,
-    # `optimize` writes the Pareto frontier, and `metrics` merges both into a single
-    # report the dashboard reads and the README cites.
+    # Consolidated metrics scorecard. `train` writes the forecast metrics, `optimize`
+    # writes the Pareto frontier, `compare` writes the decision comparison, and `metrics`
+    # merges them into a single report the dashboard reads and the README cites.
     forecast_metrics_path: Path = Path("data/metrics/forecast.json")
     report_path: Path = Path("data/metrics/report.json")
     # Decision-level forward-vs-trailing comparison on the most seasonal stretch.
     comparison_path: Path = Path("data/metrics/comparison.json")
 
-    # Dash UI — wired up in F3
+    # Dash UI
     ui_host: str = "127.0.0.1"
     ui_port: int = 8050
 

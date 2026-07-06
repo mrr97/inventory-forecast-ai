@@ -1,14 +1,16 @@
-"""Build the consolidated metrics scorecard from the train and optimize artifacts.
+"""Build the consolidated metrics scorecard from the persisted artifacts.
 
-The report merges two persisted outputs into a single JSON the dashboard reads and the
+The report merges the persisted outputs into a single JSON the dashboard reads and the
 README cites:
 
-- forecast accuracy (WAPE/MAE per model + improvement vs. baselines), written by ``train``,
-- inventory cost vs. service (Pareto frontier + saving vs. the baseline policy), written
-  by ``optimize``.
+- forecast accuracy (WAPE forward vs. trailing, overall and on promo days), by ``train``,
+- inventory cost vs. service (Pareto frontier + saving vs. the baseline policy), by
+  ``optimize``,
+- the decision-level forward-vs-trailing comparison on the seasonal stretch, by
+  ``compare`` (optional — folded in when present).
 
 It deliberately *reads artifacts* rather than recomputing, so the scorecard reflects
-exactly the committed model and frontier and is cheap to regenerate.
+exactly the committed model, frontier and comparison, and is cheap to regenerate.
 """
 
 from __future__ import annotations
@@ -60,7 +62,18 @@ def _optimization_block(pareto: dict) -> dict:
     }
 
 
-def _headline(forecast: dict, optimization: dict) -> dict[str, str]:
+def _decision_block(comparison: dict) -> dict:
+    return {
+        "window_start": comparison["window_start"],
+        "window_end": comparison["window_end"],
+        "cost_reduction": comparison["cost_reduction"],
+        "service_gain": comparison["service_gain"],
+        "forward_cost": comparison["forward_cost"],
+        "trailing_cost": comparison["trailing_cost"],
+    }
+
+
+def _headline(forecast: dict, optimization: dict, decision: dict | None) -> dict[str, str]:
     fc = (
         f"Forward forecast cuts error (WAPE) {forecast['improvement_vs_trailing']:.0%} vs. the "
         f"trailing mean, {forecast['promo_improvement_vs_trailing']:.0%} on promo days"
@@ -71,21 +84,41 @@ def _headline(forecast: dict, optimization: dict) -> dict[str, str]:
         if saving is not None
         else "Pareto frontier built; no cost saving computed"
     )
-    return {"forecast": fc, "optimization": opt}
+    headline = {"forecast": fc, "optimization": opt}
+    if decision is not None:
+        headline["decision"] = (
+            f"On the seasonal stretch, planning ahead cuts total cost "
+            f"{decision['cost_reduction']:.0%} at {decision['service_gain'] * 100:+.1f} pp service "
+            f"vs. the trailing mean"
+        )
+    return headline
 
 
 def build_report(settings: Settings) -> dict:
-    """Consolidate the forecast and optimization artifacts into one scorecard dict."""
+    """Consolidate the forecast, optimization (and optional decision) artifacts.
+
+    The decision-level forward-vs-trailing comparison is optional: it is folded in when
+    its artifact exists, so the scorecard degrades gracefully before ``compare`` is run.
+    """
     forecast = _load_json(settings.forecast_metrics_path, produced_by="train")
     pareto = _load_json(settings.pareto_path, produced_by="optimize")
 
     forecast_block = _forecast_block(forecast)
     optimization_block = _optimization_block(pareto)
-    return {
+
+    decision_block = None
+    comparison_path = getattr(settings, "comparison_path", None)
+    if comparison_path is not None and comparison_path.exists():
+        decision_block = _decision_block(json.loads(comparison_path.read_text(encoding="utf-8")))
+
+    report = {
         "forecast": forecast_block,
         "optimization": optimization_block,
-        "headline": _headline(forecast_block, optimization_block),
+        "headline": _headline(forecast_block, optimization_block, decision_block),
     }
+    if decision_block is not None:
+        report["decision"] = decision_block
+    return report
 
 
 def save_report(report: dict, path: Path) -> None:

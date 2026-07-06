@@ -14,9 +14,9 @@ Two sources of uncertainty are injected:
    Gamma multiplier, giving a Negative-Binomial-style spread) so scenarios are not
    over-confident. The widening grows with the horizon.
 
-   NOTE (F2 provisional): the per-horizon spread is a placeholder that grows like
-   ``sqrt(h)``. F4 replaces ``_provisional_forecast_cv`` with the **measured**
-   per-horizon forecast error (backtest residuals), which is the honest calibration.
+   The measured per-horizon forecast error comes from the backtest; only when it is
+   unavailable (before ``train`` has run) do we fall back to a provisional spread that
+   grows like ``sqrt(h)``.
 """
 
 from __future__ import annotations
@@ -130,9 +130,7 @@ def build_demand_scenarios(
 
     sku_ids = sorted(path["sku_id"].unique())
     lam = (
-        path.pivot(index="sku_id", columns="horizon", values="lam")
-        .loc[sku_ids]
-        .to_numpy()
+        path.pivot(index="sku_id", columns="horizon", values="lam").loc[sku_ids].to_numpy()
     )  # (n_sku, horizon)
 
     rng = np.random.default_rng(seed)

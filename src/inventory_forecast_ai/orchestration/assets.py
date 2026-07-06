@@ -5,9 +5,10 @@ the CLI calls, so there is a single source of truth. Stages hand off through fil
 disk (CSV, model, JSON), so dependencies are expressed with ``deps=[...]`` rather than
 passing data in memory:
 
-    demo_data -> trained_model -> pareto_frontier -> scorecard
+    demo_data -> trained_model -> pareto_frontier ┐
+             └-> forward_vs_trailing -------------┴-> scorecard
 
-Materializing ``scorecard`` (or ``*``) runs the whole chain in order.
+Materializing ``scorecard`` (or ``*``) runs the whole graph in order.
 """
 # No `from __future__ import annotations`: Dagster introspects the real `context`
 # type at runtime, and PEP 563 stringized annotations would break that validation.
@@ -37,7 +38,7 @@ def demo_data(context: AssetExecutionContext) -> MaterializeResult:
 
 @asset(deps=[demo_data])
 def trained_model(context: AssetExecutionContext) -> MaterializeResult:
-    """Walk-forward backtest CatBoost vs. baselines, log to MLflow, save the model."""
+    """Rolling-origin backtest (forward vs. trailing mean), log to MLflow, save the model."""
     from inventory_forecast_ai.forecasting.pipeline import train_and_evaluate
 
     settings = get_settings()
@@ -67,9 +68,25 @@ def pareto_frontier(context: AssetExecutionContext) -> MaterializeResult:
     return MaterializeResult(metadata=metadata)
 
 
-@asset(deps=[pareto_frontier])
+@asset(deps=[demo_data])
+def forward_vs_trailing(context: AssetExecutionContext) -> MaterializeResult:
+    """Decision-level comparison on the seasonal stretch (forward vs. trailing mean)."""
+    from inventory_forecast_ai.evaluation.comparison import run_comparison
+
+    settings = get_settings()
+    result = run_comparison(settings)
+    return MaterializeResult(
+        metadata={
+            "window": f"{result.window_start}..{result.window_end}",
+            "cost_reduction": MetadataValue.float(result.cost_reduction),
+            "service_gain_pp": round(result.service_gain * 100, 2),
+        }
+    )
+
+
+@asset(deps=[pareto_frontier, forward_vs_trailing])
 def scorecard(context: AssetExecutionContext) -> MaterializeResult:
-    """Consolidate forecast accuracy + cost savings into the report.json scorecard."""
+    """Consolidate forecast accuracy, cost savings and the decision comparison (report.json)."""
     from inventory_forecast_ai.evaluation.report import run_metrics
 
     settings = get_settings()
@@ -78,8 +95,9 @@ def scorecard(context: AssetExecutionContext) -> MaterializeResult:
         metadata={
             "headline_forecast": report["headline"]["forecast"],
             "headline_optimization": report["headline"]["optimization"],
+            "headline_decision": report["headline"].get("decision", "—"),
         }
     )
 
 
-ALL_ASSETS = [demo_data, trained_model, pareto_frontier, scorecard]
+ALL_ASSETS = [demo_data, trained_model, pareto_frontier, forward_vs_trailing, scorecard]
