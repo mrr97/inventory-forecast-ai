@@ -89,7 +89,7 @@ uv run inventory-forecast-ai train       # rolling-origin backtest + MLflow + sa
 | Model | WAPE | MAE |
 |-------|-----:|----:|
 | trailing mean (retrovisor) | 0.253 | 10.45 |
-| **forward (this model)** | **0.134** | **5.52** |
+| **forward (this model)** | **0.134** | **5.51** |
 
 → **~47% lower WAPE overall, and ~71% lower on promotion days** (0.136 vs. 0.477), where a
 backward-looking mean cannot see the spike coming.
