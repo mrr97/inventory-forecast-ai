@@ -48,10 +48,11 @@ class Settings(BaseSettings):
     # exhaustive sweep. Set False to skip it and train at the default hyperparameters.
     hyperparameter_search: bool = True
 
-    # CatBoost compute device. Defaults to "GPU": training always runs on CUDA with no
-    # other code change. Override to "CPU" (e.g. `CATBOOST_TASK_TYPE=CPU`) on machines
-    # without a GPU or for fully portable/deterministic runs. See the README "Scaling" note.
-    catboost_task_type: str = "GPU"
+    # CatBoost compute device. Defaults to "CPU": portable (runs anywhere with
+    # `docker compose up`) and, crucially, **deterministic** — results reproduce from the
+    # seed. For very large catalogues set `CATBOOST_TASK_TYPE=GPU` to train on CUDA with no
+    # other code change; note GPU training is not bit-for-bit reproducible. See the README.
+    catboost_task_type: str = "CPU"
 
     # Multi-objective inventory optimization. The planning horizon is fixed at the
     # protection interval (weekly review + max lead time) in `forecasting.features.HORIZON`

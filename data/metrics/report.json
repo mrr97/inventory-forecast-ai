@@ -2,43 +2,43 @@
   "forecast": {
     "horizon": 14,
     "wape": {
-      "forward": 0.1280540049463904,
+      "forward": 0.1337363380385918,
       "trailing": 0.25340931880473294
     },
     "mae": {
-      "forward": 5.280580354060735,
+      "forward": 5.514903493774092,
       "trailing": 10.449874418034796
     },
     "wape_promo": {
-      "forward": 0.11145584065237565,
+      "forward": 0.13598765401800092,
       "trailing": 0.47678554275342905
     },
-    "improvement_vs_trailing": 0.4946752331351173,
-    "promo_improvement_vs_trailing": 0.7662348568525801,
+    "improvement_vs_trailing": 0.4722516967040045,
+    "promo_improvement_vs_trailing": 0.7147823458893608,
     "n_origins": 106,
     "n_rows": 32648
   },
   "optimization": {
-    "n_pareto_points": 37,
-    "baseline_cost": 2144.104906502316,
-    "baseline_service": 0.9992600401919196,
-    "cost_saving_pct": 0.3010344727961381,
-    "cheapest_cost": 1276.9550455767173,
-    "cheapest_service": 0.947557407242098,
+    "n_pareto_points": 52,
+    "baseline_cost": 2157.4074527586386,
+    "baseline_service": 0.9983582564479612,
+    "cost_saving_pct": 0.3163124866399195,
+    "cheapest_cost": 1192.613851346229,
+    "cheapest_service": 0.8929986910718377,
     "best_service": 1.0,
-    "best_service_cost": 1577.9377103899349
+    "best_service_cost": 1654.8178097577181
   },
   "headline": {
-    "forecast": "Forward forecast cuts error (WAPE) 49% vs. the trailing mean, 77% on promo days",
-    "optimization": "At the baseline's service level, optimization cuts operating cost 30%",
-    "decision": "On the seasonal stretch, planning ahead cuts total cost 17% at +1.0 pp service vs. the trailing mean"
+    "forecast": "Forward forecast cuts error (WAPE) 47% vs. the trailing mean, 71% on promo days",
+    "optimization": "At the baseline's service level, optimization cuts operating cost 32%",
+    "decision": "On the seasonal stretch, planning ahead cuts total cost 19% at +1.1 pp service vs. the trailing mean"
   },
   "decision": {
     "window_start": "2025-08-09",
     "window_end": "2025-10-08",
-    "cost_reduction": 0.17019621216354763,
-    "service_gain": 0.010028192545013193,
-    "forward_cost": 2809.187688971512,
+    "cost_reduction": 0.19261048141477588,
+    "service_gain": 0.010758979372294641,
+    "forward_cost": 2733.3072336628975,
     "trailing_cost": 3385.363781353551
   }
 }
