@@ -21,6 +21,7 @@ keeps the setup leak-free.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 # Forecast horizon in days = protection interval (weekly review + max lead time).
@@ -130,6 +131,28 @@ def build_training_frame(
     out = pd.concat(frames, ignore_index=True)
     out = out.dropna(subset=ORIGIN_FEATURES).reset_index(drop=True)
     return out
+
+
+def temporal_train_val_split(
+    frame: pd.DataFrame, *, val_days: int
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split multi-horizon rows by **target date**: the last ``val_days`` days = validation.
+
+    Used to feed CatBoost early stopping an honest, out-of-time validation set. Because
+    the split is on the target day ``t+h``, no target day in the validation tail appears
+    in the training rows — the model is validated strictly on the future, mirroring how it
+    is used. Rows whose target lands on/after the cutoff go to validation; the rest train.
+    """
+    dates = np.sort(frame["date"].unique())
+    if len(dates) <= val_days:
+        raise ValueError(
+            f"Not enough distinct target days ({len(dates)}) for a {val_days}-day "
+            "validation tail; lower early_stopping_val_days or add history."
+        )
+    cutoff = dates[len(dates) - val_days]
+    train = frame[frame["date"] < cutoff].reset_index(drop=True)
+    val = frame[frame["date"] >= cutoff].reset_index(drop=True)
+    return train, val
 
 
 def build_forecast_frame(

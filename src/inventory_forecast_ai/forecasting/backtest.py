@@ -30,6 +30,7 @@ from inventory_forecast_ai.forecasting.features import (
     TARGET,
     build_forecast_frame,
     build_training_frame,
+    temporal_train_val_split,
 )
 from inventory_forecast_ai.forecasting.metrics import mae, wape
 from inventory_forecast_ai.forecasting.model import predict, train_model
@@ -89,15 +90,26 @@ def backtest_forecast(
     holdout_days: int,
     horizon: int = HORIZON,
     params: dict | None = None,
+    val_days: int = 0,
+    early_stopping_rounds: int = 50,
 ) -> BacktestResult:
-    """Roll the origin through the held-out tail and score the forward path per horizon."""
+    """Roll the origin through the held-out tail and score the forward path per horizon.
+
+    When ``val_days > 0`` the backtest model is trained with early stopping on a temporal
+    validation tail carved from the pre-holdout data (strictly before the holdout, so the
+    evaluation stays out-of-sample), matching how the deployed model is fitted.
+    """
     demand = demand.copy()
     demand["date"] = pd.to_datetime(demand["date"])
     unique_days = np.sort(demand["date"].unique())
     holdout_start = unique_days[len(unique_days) - holdout_days]
 
     train_df = build_training_frame(demand[demand["date"] < holdout_start], skus, horizon=horizon)
-    model = train_model(train_df, params)
+    if val_days > 0:
+        tr, val = temporal_train_val_split(train_df, val_days=val_days)
+        model = train_model(tr, params, eval_df=val, early_stopping_rounds=early_stopping_rounds)
+    else:
+        model = train_model(train_df, params)
 
     # Origins are holdout days that still have a full protection window of actuals ahead.
     last_origin = unique_days[len(unique_days) - 1 - horizon]

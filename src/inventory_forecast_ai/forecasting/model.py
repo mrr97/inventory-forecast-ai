@@ -21,7 +21,9 @@ from inventory_forecast_ai.forecasting.features import (
 
 DEFAULT_PARAMS: dict = {
     "loss_function": "Poisson",
-    "iterations": 400,
+    # Upper bound only: when an eval set is supplied, early stopping selects the actual
+    # number of trees (see ``train_model``), so this is a ceiling, not a tuned constant.
+    "iterations": 2000,
     "depth": 6,
     "learning_rate": 0.08,
     "random_seed": 42,
@@ -47,11 +49,48 @@ def _to_pool(frame: pd.DataFrame, *, with_label: bool = True) -> Pool:
     return Pool(features, label=label, cat_features=CATEGORICAL_FEATURES)
 
 
-def train_model(train_df: pd.DataFrame, params: dict | None = None) -> CatBoostRegressor:
-    """Fit a CatBoost model on the multi-horizon feature frame."""
+def train_model(
+    train_df: pd.DataFrame,
+    params: dict | None = None,
+    *,
+    eval_df: pd.DataFrame | None = None,
+    early_stopping_rounds: int = 50,
+) -> CatBoostRegressor:
+    """Fit a CatBoost model on the multi-horizon feature frame.
+
+    When ``eval_df`` is given (a temporal validation tail — see
+    ``features.temporal_train_val_split``), training uses early stopping: ``iterations``
+    becomes an upper bound and the number of trees is chosen where the validation loss
+    stops improving, and the best iteration is kept (``use_best_model``). Without an
+    eval set it is a plain fit at the configured ``iterations``.
+    """
     model = CatBoostRegressor(**(params or DEFAULT_PARAMS))
-    model.fit(_to_pool(train_df))
+    if eval_df is not None:
+        model.fit(
+            _to_pool(train_df),
+            eval_set=_to_pool(eval_df),
+            early_stopping_rounds=early_stopping_rounds,
+            use_best_model=True,
+        )
+    else:
+        model.fit(_to_pool(train_df))
     return model
+
+
+def best_iteration(model: CatBoostRegressor) -> int:
+    """Number of trees kept after early stopping — the honest, selected iteration count."""
+    return int(model.tree_count_)
+
+
+def validation_curve(model: CatBoostRegressor) -> dict[str, list[float]]:
+    """Per-iteration validation loss recorded during an early-stopping fit.
+
+    Returns ``{metric_name: [loss per iteration]}`` (empty if the model was trained
+    without an eval set). Used to log the selection curve to MLflow.
+    """
+    evals = model.get_evals_result()
+    val = evals.get("validation") or evals.get("validation_0") or {}
+    return {name: [float(x) for x in values] for name, values in val.items()}
 
 
 def predict(model: CatBoostRegressor, frame: pd.DataFrame) -> np.ndarray:

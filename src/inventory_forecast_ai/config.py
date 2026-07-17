@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # origin through the holdout scoring the full forward path (t+1 .. t+HORIZON).
     backtest_holdout_days: int = 120
 
+    # Early stopping: reserve the most recent `early_stopping_val_days` of (target-day)
+    # history as a temporal validation tail. CatBoost picks the number of iterations by
+    # early stopping on it, so the model's `iterations` is only an upper bound — no
+    # hand-tuned magic number. Set `early_stopping_val_days = 0` to fall back to a plain
+    # fit at the ceiling.
+    early_stopping_val_days: int = 28
+    early_stopping_rounds: int = 50
+
     # CatBoost compute device. "CPU" is the default and keeps the project fully
     # portable (runs anywhere with `docker compose up`, deterministic). For very
     # large catalogues (hundreds of thousands of SKUs) set "GPU" — CatBoost will

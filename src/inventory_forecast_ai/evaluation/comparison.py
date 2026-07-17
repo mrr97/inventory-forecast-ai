@@ -30,6 +30,7 @@ from inventory_forecast_ai.forecasting.features import (
     TARGET,
     build_forecast_frame,
     build_training_frame,
+    temporal_train_val_split,
 )
 from inventory_forecast_ai.forecasting.model import build_params, predict_path, train_model
 from inventory_forecast_ai.optimization.optimize import baseline_policy
@@ -115,6 +116,8 @@ def compare_forward_vs_trailing(
     step_days: int = 7,
     min_history: int = 400,
     params: dict | None = None,
+    val_days: int = 0,
+    early_stopping_rounds: int = 50,
 ) -> ComparisonResult:
     """Roll the origin through the most seasonal stretch and compare realized outcomes."""
     demand = demand.copy()
@@ -125,9 +128,15 @@ def compare_forward_vs_trailing(
     start_i = _pick_seasonal_window(dates, totals, window_days, min_history)
     window_start = dates[start_i]
 
-    # Honest OOS: train only on data before the stretch.
+    # Honest OOS: train only on data before the stretch. Early-stop like the deployed
+    # model when a validation tail is requested, so the compared forecast matches it.
     train_df = build_training_frame(demand[demand["date"] < window_start], skus)
-    model = train_model(train_df, params or build_params("CPU"))
+    p = params or build_params("CPU")
+    if val_days > 0:
+        tr, val = temporal_train_val_split(train_df, val_days=val_days)
+        model = train_model(tr, p, eval_df=val, early_stopping_rounds=early_stopping_rounds)
+    else:
+        model = train_model(train_df, p)
 
     econ = skus.set_index("sku_id")
     origin_idxs = range(start_i, start_i + window_days, step_days)
@@ -218,7 +227,11 @@ def run_comparison(settings: Settings) -> ComparisonResult:
     demand = pd.read_csv(settings.demand_path)
     skus = pd.read_csv(settings.skus_path)
     result = compare_forward_vs_trailing(
-        demand, skus, params=build_params(settings.catboost_task_type)
+        demand,
+        skus,
+        params=build_params(settings.catboost_task_type),
+        val_days=settings.early_stopping_val_days,
+        early_stopping_rounds=settings.early_stopping_rounds,
     )
     save_comparison(result, settings.comparison_path)
     log.info("comparison_saved", path=str(settings.comparison_path))
