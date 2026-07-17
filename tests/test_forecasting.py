@@ -15,6 +15,7 @@ from inventory_forecast_ai.forecasting.features import (
     build_training_frame,
 )
 from inventory_forecast_ai.forecasting.metrics import mae, wape
+from inventory_forecast_ai.forecasting.model import search_hyperparameters
 
 _TINY = {
     "loss_function": "Poisson",
@@ -71,6 +72,25 @@ def test_forecast_frame_is_one_path_per_sku(demo):
     assert (per_sku == 7).all()
     for col in FEATURES:
         assert col in fc.columns
+
+
+def test_hyperparameter_search_picks_a_config(demo):
+    demand, skus = demo
+    from inventory_forecast_ai.forecasting.features import temporal_train_val_split
+
+    frame = build_training_frame(demand, skus, horizon=7)
+    train, val = temporal_train_val_split(frame, val_days=14)
+    grid = {"depth": [4, 6], "learning_rate": [0.1]}
+    best, trials = search_hyperparameters(
+        train, val, base_params=_TINY, grid=grid, early_stopping_rounds=10
+    )
+
+    assert len(trials) == 2  # 2 depths x 1 learning rate
+    assert best["combo"]["depth"] in (4, 6)
+    assert best["combo"]["learning_rate"] == 0.1
+    # The winner has the lowest validation loss and carries a concrete iteration count.
+    assert best["val_loss"] == min(t["val_loss"] for t in trials)
+    assert best["params"]["iterations"] >= 1
 
 
 def test_backtest_reports_forward_and_trailing(demo):

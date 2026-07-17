@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import mlflow
+import numpy as np
 import pandas as pd
 import structlog
 
@@ -17,8 +18,10 @@ from inventory_forecast_ai.forecasting.features import (
 )
 from inventory_forecast_ai.forecasting.model import (
     DEFAULT_PARAMS,
+    DEFAULT_SEARCH_GRID,
     best_iteration,
     build_params,
+    search_hyperparameters,
     train_model,
     validation_curve,
 )
@@ -26,14 +29,40 @@ from inventory_forecast_ai.forecasting.model import (
 log = structlog.get_logger(__name__)
 
 
+def _search_pre_holdout(
+    demand: pd.DataFrame, skus: pd.DataFrame, base_params: dict, *, settings: Settings
+) -> tuple[dict, list[dict]]:
+    """Run the small temporal grid search on **pre-holdout** data only.
+
+    Selecting depth / learning_rate on data strictly before the backtest window keeps the
+    backtest honest: the reported metrics are for a model whose hyperparameters were never
+    tuned against the held-out tail they are scored on.
+    """
+    demand = demand.copy()
+    demand["date"] = pd.to_datetime(demand["date"])
+    unique_days = np.sort(demand["date"].unique())
+    holdout_start = unique_days[len(unique_days) - settings.backtest_holdout_days]
+    pre = build_training_frame(demand[demand["date"] < holdout_start], skus)
+    pre_train, pre_val = temporal_train_val_split(pre, val_days=settings.early_stopping_val_days)
+    return search_hyperparameters(
+        pre_train,
+        pre_val,
+        base_params=base_params,
+        early_stopping_rounds=settings.early_stopping_rounds,
+    )
+
+
 def _log_to_mlflow(
     settings: Settings,
     result: BacktestResult,
     *,
+    tuned_params: dict,
     best_iter: int,
     val_curve: dict[str, list[float]],
+    trials: list[dict],
+    training_curve_path: Path,
 ) -> None:
-    """Record params, pooled backtest metrics and the early-stopping selection in MLflow."""
+    """Record params, pooled backtest metrics, the search and the early-stopping selection."""
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(settings.mlflow_experiment)
     with mlflow.start_run():
@@ -43,14 +72,23 @@ def _log_to_mlflow(
                 "loss_function": DEFAULT_PARAMS["loss_function"],
                 # `iterations` is only a ceiling; early stopping chooses `best_iteration`.
                 "iterations_cap": DEFAULT_PARAMS["iterations"],
-                "depth": DEFAULT_PARAMS["depth"],
-                "learning_rate": DEFAULT_PARAMS["learning_rate"],
+                # depth / learning_rate come from the grid search when it ran.
+                "depth": tuned_params["depth"],
+                "learning_rate": tuned_params["learning_rate"],
+                "hyperparameter_search": settings.hyperparameter_search,
                 "horizon": result.horizon,
                 "backtest_holdout_days": settings.backtest_holdout_days,
                 "early_stopping_val_days": settings.early_stopping_val_days,
                 "early_stopping_rounds": settings.early_stopping_rounds,
             }
         )
+        # The grid search: log every trial's validation loss for the record.
+        if trials:
+            mlflow.log_dict(
+                {"grid": DEFAULT_SEARCH_GRID, "trials": trials}, "hyperparameter_search.json"
+            )
+        # CatBoost's own training-progress chart for the final model (native fit(plot_file=...)).
+        mlflow.log_artifact(str(training_curve_path))
         # The iteration count early stopping settled on, plus the validation-loss curve
         # that drove the choice (one point per iteration -> a curve in the MLflow UI).
         mlflow.log_metric("best_iteration", best_iter)
@@ -102,6 +140,21 @@ def train_and_evaluate(settings: Settings) -> BacktestResult:
     skus = pd.read_csv(settings.skus_path)
 
     params = build_params(settings.catboost_task_type)
+
+    # Optional small temporal grid search over depth / learning_rate on PRE-HOLDOUT data,
+    # so the chosen hyperparameters never see the backtest window. They are then used
+    # everywhere below (backtest and deployed model) for a coherent set of numbers.
+    trials: list[dict] = []
+    if settings.hyperparameter_search and settings.early_stopping_val_days > 0:
+        best, trials = _search_pre_holdout(demand, skus, params, settings=settings)
+        params = {**params, **best["combo"]}  # keep `iterations` as the ceiling
+        log.info(
+            "hyperparameter_search_done",
+            best=best["combo"],
+            val_loss=round(best["val_loss"], 5),
+            trials=len(trials),
+        )
+
     result = backtest_forecast(
         demand,
         skus,
@@ -131,15 +184,36 @@ def train_and_evaluate(settings: Settings) -> BacktestResult:
         val_rows=len(val_part),
     )
 
+    # Refit on ALL history at the selected iteration count: recent data is the most
+    # informative for forecasting, and the validation tail has already done its job.
+    # CatBoost writes its native training-progress chart straight to HTML (fit(plot_file=...)),
+    # which needs file writing enabled and a train_dir; both live under the gitignored models/.
+    log.info("features_built", rows=len(features), skus=skus["sku_id"].nunique())
+    model_dir: Path = settings.model_dir
+    model_dir.mkdir(parents=True, exist_ok=True)
+    training_curve_path = model_dir / "final_training_curve.html"
+    final_model = train_model(
+        features,
+        {
+            **params,
+            "iterations": chosen_iterations,
+            "allow_writing_files": True,
+            "train_dir": str(model_dir / "catboost_info"),
+        },
+        plot_file=str(training_curve_path),
+    )
+
     _log_to_mlflow(
-        settings, result, best_iter=chosen_iterations, val_curve=validation_curve(es_model)
+        settings,
+        result,
+        tuned_params=params,
+        best_iter=chosen_iterations,
+        val_curve=validation_curve(es_model),
+        trials=trials,
+        training_curve_path=training_curve_path,
     )
     _save_forecast_metrics(settings, result, best_iteration=chosen_iterations)
 
-    # Refit on ALL history at the selected iteration count: recent data is the most
-    # informative for forecasting, and the validation tail has already done its job.
-    log.info("features_built", rows=len(features), skus=skus["sku_id"].nunique())
-    final_model = train_model(features, {**params, "iterations": chosen_iterations})
     model_path: Path = settings.model_path
     model_path.parent.mkdir(parents=True, exist_ok=True)
     final_model.save_model(str(model_path))

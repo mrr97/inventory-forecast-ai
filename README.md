@@ -11,10 +11,10 @@ multi-horizon model forecasts the next two weeks of demand for every SKU — usi
 **planned promotions** — and those forecasts drive the ordering policy.
 
 - **Forecast (forward vs. a trailing-mean baseline):** cuts demand error (WAPE) **~49%** overall and **~77% on promotion days**, where a backward-looking mean is blind.
-- **Decision (on the most seasonal stretch):** planning ahead cuts **total inventory cost ~19%** at **higher service** — the retrovisor loses ~2.5× more sales.
-- **Optimization:** at the safety-stock baseline's service level, the optimizer cuts operating cost **~34%**, and returns a whole **Pareto frontier** to pick from rather than a single number.
+- **Decision (on the most seasonal stretch):** planning ahead cuts **total inventory cost ~17%** at **higher service** — the retrovisor loses ~2.5× more sales.
+- **Optimization:** at the safety-stock baseline's service level, the optimizer cuts operating cost **~30%**, and returns a whole **Pareto frontier** to pick from rather than a single number.
 
-![Cost-vs-service Pareto frontier: at the safety-stock baseline's service level, the optimizer's policy costs ~34% less](docs/pareto.png)
+![Cost-vs-service Pareto frontier: at the safety-stock baseline's service level, the optimizer's policy costs ~30% less](docs/pareto.png)
 
 ---
 
@@ -71,9 +71,12 @@ by taking the **horizon `h` as an input feature** — so one model, queried for 
 the whole forward path (no recursion, so error does not compound). Each row pairs **origin-time**
 features (recent demand as-of today) with **target-day** features knowable in advance (calendar and
 *planned* promo/price). The horizon `HORIZON = 14` is the **protection interval** = weekly review +
-lead time. The number of boosting iterations is **not a hand-tuned constant**: it is chosen by
-**early stopping** on a temporal validation tail (the most recent weeks of history), so `iterations`
-is only a ceiling and the selected count is logged to MLflow.
+lead time. Hyperparameters are **not hand-tuned constants**: the number of boosting iterations is
+chosen by **early stopping** on a temporal validation tail (the most recent weeks of history, so
+`iterations` is only a ceiling), and `depth` / `learning_rate` come from a **small temporal grid
+search** on that same tail — a sanity check on the defaults, run on pre-holdout data so it never
+sees the backtest window. The selected iteration count, the search trials and CatBoost's own
+training-progress chart are all logged to MLflow.
 
 It is scored with a **rolling-origin backtest** — train on the past, roll the origin through a
 held-out tail, score the full 14-day path per horizon — against the **trailing 28-day mean**
@@ -86,14 +89,16 @@ uv run inventory-forecast-ai train       # rolling-origin backtest + MLflow + sa
 | Model | WAPE | MAE |
 |-------|-----:|----:|
 | trailing mean (retrovisor) | 0.253 | 10.45 |
-| **forward (this model)** | **0.129** | **5.32** |
+| **forward (this model)** | **0.128** | **5.28** |
 
 → **~49% lower WAPE overall, and ~77% lower on promotion days** (0.111 vs. 0.477), where a
 backward-looking mean cannot see the spike coming.
 
-> **Scaling note.** Training runs on CPU by default, which keeps the project portable (runs anywhere
-> with `docker compose up`) and deterministic. For very large catalogues set `CATBOOST_TASK_TYPE=GPU`
-> and CatBoost trains on CUDA with no other code change. At this data size it is not worth it.
+> **Scaling & reproducibility note.** Training runs on **GPU** by default (`CATBOOST_TASK_TYPE=GPU`):
+> CatBoost trains on CUDA with no other code change. GPU training is **not bit-for-bit reproducible**,
+> so the exact figures above vary slightly run-to-run (the numbers shown are a representative run).
+> Set `CATBOOST_TASK_TYPE=CPU` for a fully portable, **deterministic** run from the seed
+> (`docker compose up` works either way).
 
 ## Scenarios & uncertainty
 
@@ -115,10 +120,10 @@ uv run inventory-forecast-ai dashboard   # serve forecast + Pareto views (http:/
 
 | Policy | Operating cost | Service |
 |--------|---------------:|--------:|
-| baseline (safety stock) | €2159 | 99.9% |
-| optimizer @ baseline service | **−34%** | 99.9% |
+| baseline (safety stock) | €2144 | 99.9% |
+| optimizer @ baseline service | **−30%** | 99.9% |
 
-→ The frontier holds **47 non-dominated policies**; the business picks the cost/service trade-off it
+→ The frontier holds **37 non-dominated policies**; the business picks the cost/service trade-off it
 wants rather than being handed a single number.
 
 ### Why a metaheuristic instead of an exact solver?
@@ -143,9 +148,9 @@ uv run inventory-forecast-ai compare     # forward vs. trailing on the seasonal 
 | Policy | Total cost | Service |
 |--------|-----------:|--------:|
 | trailing mean (retrovisor) | €3385 | 98.3% |
-| **forward (parabrisas)** | **€2733** | 99.3% |
+| **forward (parabrisas)** | **€2809** | 99.3% |
 
-→ **~19% lower total cost at ~1 pp higher service.** The trailing policy's operating cost is barely
+→ **~17% lower total cost at ~1 pp higher service.** The trailing policy's operating cost is barely
 lower, but it loses **~2.5× more sales** because it lags the ramp — so it ends up more expensive.
 
 ## Scorecard
@@ -208,7 +213,7 @@ Pipeline de planificación de inventario que decide **mirando hacia delante**, n
 único modelo multi-horizonte (CatBoost, horizonte como variable) predice los próximos 14 días de
 demanda por SKU usando el calendario y las **promociones planificadas**, y esa predicción alimenta la
 política de pedido (s, S). Frente a una **media móvil** (el "retrovisor"): **~49% menos error (WAPE)**,
-**~77% menos en días de promoción**, y en el tramo más estacional **~19% menos coste total** con más
+**~77% menos en días de promoción**, y en el tramo más estacional **~17% menos coste total** con más
 servicio (el retrovisor pierde ~2,5× más ventas). La optimización multi-objetivo (pymoo / NSGA-II)
 sobre escenarios de demanda **futura** —ensanchados por el error de pronóstico medido— entrega una
 **frontera de Pareto** coste-vs-servicio, no un único número. Todo se encadena con un grafo de assets

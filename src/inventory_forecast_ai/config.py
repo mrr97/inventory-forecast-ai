@@ -42,12 +42,16 @@ class Settings(BaseSettings):
     early_stopping_val_days: int = 28
     early_stopping_rounds: int = 50
 
-    # CatBoost compute device. "CPU" is the default and keeps the project fully
-    # portable (runs anywhere with `docker compose up`, deterministic). For very
-    # large catalogues (hundreds of thousands of SKUs) set "GPU" — CatBoost will
-    # train on CUDA with no other code change. Not worth it at this data size, where
-    # GPU init overhead outweighs the compute. See the README "Scaling" note.
-    catboost_task_type: str = "CPU"
+    # Small temporal grid search over depth / learning_rate (see model.DEFAULT_SEARCH_GRID).
+    # Selected on the same temporal validation tail as early stopping, on pre-holdout data
+    # so it never sees the backtest window. A sanity check on the defaults, not an
+    # exhaustive sweep. Set False to skip it and train at the default hyperparameters.
+    hyperparameter_search: bool = True
+
+    # CatBoost compute device. Defaults to "GPU": training always runs on CUDA with no
+    # other code change. Override to "CPU" (e.g. `CATBOOST_TASK_TYPE=CPU`) on machines
+    # without a GPU or for fully portable/deterministic runs. See the README "Scaling" note.
+    catboost_task_type: str = "GPU"
 
     # Multi-objective inventory optimization. The planning horizon is fixed at the
     # protection interval (weekly review + max lead time) in `forecasting.features.HORIZON`
