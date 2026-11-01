@@ -68,6 +68,12 @@ def load_pareto(settings: Settings) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_product_names(settings: Settings) -> dict[str, str]:
+    """Map saved SKU identifiers to their display names."""
+    skus = pd.read_csv(settings.skus_path)
+    return dict(zip(skus["sku_id"], skus["name"], strict=True))
+
+
 def load_report(settings: Settings) -> dict | None:
     """Load the consolidated scorecard, or None if `metrics` has not run yet."""
     path = settings.report_path

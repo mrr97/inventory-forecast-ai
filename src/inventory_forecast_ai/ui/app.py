@@ -6,7 +6,12 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 
 from inventory_forecast_ai.config import Settings, get_settings
-from inventory_forecast_ai.ui.data import load_forecast_frame, load_pareto, load_report
+from inventory_forecast_ai.ui.data import (
+    load_forecast_frame,
+    load_pareto,
+    load_product_names,
+    load_report,
+)
 
 _TEAL = "#0f9d8f"
 _SLATE = "#334155"
@@ -132,12 +137,83 @@ def _scorecard_children(report: dict | None) -> list:
     return [*paragraphs, cards]
 
 
+def _policy_detail(pareto: dict, click_data: dict | None, product_names: dict[str, str]):
+    if not click_data or not click_data.get("points"):
+        return "Click a point on the frontier to see replenishment levels for each product."
+    idx = click_data["points"][0].get("customdata")
+    if idx is None:
+        return "Baseline policy selected. Select an optimized policy to see product-level targets."
+
+    chosen = pareto["points"][idx]
+    sku_ids = pareto["sku_ids"]
+    n = len(sku_ids)
+    policy = chosen["policy"]  # Saved as [s for every SKU, S for every SKU].
+    rows = []
+    cell_style = {"padding": "10px 12px", "borderBottom": "1px solid #e2e8f0"}
+    number_style = {**cell_style, "textAlign": "right", "fontVariantNumeric": "tabular-nums"}
+    for sku_id, reorder, target in zip(sku_ids, policy[:n], policy[n:], strict=True):
+        rows.append(
+            html.Tr(
+                [
+                    html.Th(sku_id, scope="row", style={**cell_style, "fontWeight": 400}),
+                    html.Td(product_names.get(sku_id, sku_id), style=cell_style),
+                    html.Td(f"{reorder:,.2f}", style=number_style),
+                    html.Td(f"{target:,.2f}", style=number_style),
+                ]
+            )
+        )
+
+    return html.Div(
+        [
+            html.P(
+                f"Selected policy → operating cost €{chosen['cost']:.0f}, "
+                f"service {chosen['service'] * 100:.1f}%.",
+                style={"fontWeight": 600},
+            ),
+            html.P(
+                "Reorder when stock on hand plus incoming orders is at or below the reorder "
+                "point (s). Order enough to reach the target level (S), subject to the "
+                "product's minimum order quantity. All quantities are in units, displayed "
+                "to two decimal places."
+            ),
+            html.Div(
+                html.Table(
+                    [
+                        html.Caption(
+                            "Replenishment levels by product",
+                            style={"textAlign": "left", "fontWeight": 600, "padding": "8px 12px"},
+                        ),
+                        html.Thead(
+                            html.Tr(
+                                [
+                                    html.Th(label, scope="col", style=cell_style)
+                                    for label in (
+                                        "SKU",
+                                        "Product",
+                                        "Reorder point (s)",
+                                        "Replenish up to (S)",
+                                    )
+                                ],
+                                style={"background": "#f8fafc"},
+                            )
+                        ),
+                        html.Tbody(rows),
+                    ],
+                    style={"width": "100%", "borderCollapse": "collapse", "textAlign": "left"},
+                ),
+                style={"overflowX": "auto"},
+            ),
+        ]
+    )
+
+
 def create_app(settings: Settings | None = None) -> Dash:
     """Build the Dash app. Data is loaded once at construction for snappy callbacks."""
     settings = settings or get_settings()
     forecast = load_forecast_frame(settings)
     pareto = load_pareto(settings)
     report = load_report(settings)
+    product_names = load_product_names(settings) if pareto else {}
     sku_ids = sorted(forecast["sku_id"].unique())
 
     app = Dash(__name__, title="Inventory Forecast AI")
@@ -175,7 +251,7 @@ def create_app(settings: Settings | None = None) -> Dash:
             dcc.Graph(id="pareto-graph", figure=_pareto_figure(pareto)),
             html.Div(
                 id="pareto-detail",
-                children="Click a point on the frontier to see that policy.",
+                children=_policy_detail(pareto, None, product_names),
                 style={"color": _SLATE, "marginTop": "8px"},
             ),
         ]
@@ -198,17 +274,7 @@ def create_app(settings: Settings | None = None) -> Dash:
 
         @app.callback(Output("pareto-detail", "children"), Input("pareto-graph", "clickData"))
         def _show_policy(click_data):
-            if not click_data:
-                return "Click a point on the frontier to see that policy."
-            point = click_data["points"][0]
-            idx = point.get("customdata")
-            if idx is None:
-                return "Baseline policy selected."
-            chosen = pareto["points"][idx]
-            return (
-                f"Selected policy → operating cost €{chosen['cost']:.0f}, "
-                f"service {chosen['service'] * 100:.1f}%."
-            )
+            return _policy_detail(pareto, click_data, product_names)
 
     return app
 

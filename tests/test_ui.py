@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 
 from inventory_forecast_ai.ui import app as ui_app
 from inventory_forecast_ai.ui.app import _forecast_figure, _pareto_figure, create_app
-from inventory_forecast_ai.ui.data import load_pareto
+from inventory_forecast_ai.ui.data import load_pareto, load_product_names
 
 
 def _forecast_frame() -> pd.DataFrame:
@@ -30,12 +30,22 @@ def _forecast_frame() -> pd.DataFrame:
 
 def _pareto_dict() -> dict:
     return {
-        "sku_ids": ["SKU-1001", "SKU-1002"],
+        "sku_ids": ["SKU-1002", "SKU-1001"],
         "baseline": {"cost": 5000.0, "stockout": 0.002, "service": 0.998},
         "cost_saving_pct": 0.12,
         "points": [
-            {"cost": 4000.0, "stockout": 0.05, "service": 0.95, "policy": {}},
-            {"cost": 4500.0, "stockout": 0.02, "service": 0.98, "policy": {}},
+            {
+                "cost": 4000.0,
+                "stockout": 0.05,
+                "service": 0.95,
+                "policy": [12.25, 3.5, 84.5, 40.75],
+            },
+            {
+                "cost": 4500.0,
+                "stockout": 0.02,
+                "service": 0.98,
+                "policy": [20.0, 7.0, 95.0, 55.0],
+            },
         ],
     }
 
@@ -96,10 +106,72 @@ def test_create_app_builds_with_stubbed_data(monkeypatch):
     monkeypatch.setattr(ui_app, "load_forecast_frame", lambda settings: _forecast_frame())
     monkeypatch.setattr(ui_app, "load_pareto", lambda settings: _pareto_dict())
     monkeypatch.setattr(ui_app, "load_report", lambda settings: _report_dict())
+    monkeypatch.setattr(ui_app, "load_product_names", lambda settings: {})
 
     app = create_app(settings=object())
     assert app.layout is not None
     assert "12%" in str(app.layout)
+
+
+def test_load_product_names_preserves_sku_association(tmp_path):
+    class _S:
+        skus_path = tmp_path / "skus.csv"
+
+    _S.skus_path.write_text("sku_id,name\nSKU-1002,Popcorn\nSKU-1001,Cola\n", encoding="utf-8")
+    assert load_product_names(_S()) == {"SKU-1002": "Popcorn", "SKU-1001": "Cola"}
+
+
+def test_policy_selection_updates_product_targets_and_clears_them_for_baseline(monkeypatch):
+    monkeypatch.setattr(ui_app, "load_forecast_frame", lambda settings: _forecast_frame())
+    monkeypatch.setattr(ui_app, "load_pareto", lambda settings: _pareto_dict())
+    monkeypatch.setattr(ui_app, "load_report", lambda settings: _report_dict())
+    monkeypatch.setattr(
+        ui_app, "load_product_names", lambda settings: {"SKU-1001": "Cola", "SKU-1002": "Popcorn"}
+    )
+    client = create_app(settings=object()).server.test_client()
+
+    def select(click):
+        response = client.post(
+            "/_dash-update-component",
+            json={
+                "output": "pareto-detail.children",
+                "outputs": {"id": "pareto-detail", "property": "children"},
+                "inputs": [{"id": "pareto-graph", "property": "clickData", "value": click}],
+                "changedPropIds": ["pareto-graph.clickData"],
+                "state": [],
+            },
+        )
+        assert response.status_code == 200
+        return response.get_json()["response"]["pareto-detail"]["children"]
+
+    def table_rows(component):
+        if isinstance(component, dict):
+            if component.get("type") == "Tbody":
+                return [
+                    [cell["props"]["children"] for cell in row["props"]["children"]]
+                    for row in component["props"]["children"]
+                ]
+            return table_rows(component.get("props", {}).get("children"))
+        if isinstance(component, list):
+            return next((rows for child in component if (rows := table_rows(child))), [])
+        return []
+
+    assert "Click a point" in select(None)
+    first = select({"points": [{"customdata": 0}]})
+    assert table_rows(first) == [
+        ["SKU-1002", "Popcorn", "12.25", "84.50"],
+        ["SKU-1001", "Cola", "3.50", "40.75"],
+    ]
+    assert "€4000" in str(first)
+    second = select({"points": [{"customdata": 1}]})
+    assert table_rows(second) == [
+        ["SKU-1002", "Popcorn", "20.00", "95.00"],
+        ["SKU-1001", "Cola", "7.00", "55.00"],
+    ]
+    assert "€4500" in str(second)
+    baseline = select({"points": [{"curveNumber": 1, "pointNumber": 0}]})
+    assert "Baseline policy selected" in baseline
+    assert table_rows(baseline) == []
 
 
 def test_scorecard_renders_metric_cards():
